@@ -24,6 +24,8 @@
 #define L_CS 3
 #endif
 
+//#define verbose_debug
+
 FuncItem funcItem[nbFunc];
 NppData nppData;
 
@@ -250,9 +252,10 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                 continue;
             }
             else {
+#ifdef verbose_debug
                 std::wstring debugMsg = L"Processing line inside struct: " + stringToWstring(line);
                 ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Inside Struct"), MB_OK | MB_ICONINFORMATION);
-
+#endif
                 if (std::regex_match(line, paddingPattern)) {
                     continue;
                 }
@@ -264,8 +267,10 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                     std::string offset = matches[3].str();
                     std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
                     result << "        public const uint " << fieldName << " = 0x" << offset << "; // " << fieldType << "\n";
+#ifdef verbose_debug
                     std::wstring debugMsg = L"Matched field: " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
                     ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Field Match"), MB_OK | MB_ICONINFORMATION);
+#endif
                 }
                 if (line.find("};") != std::string::npos) {
                     insideStruct = false;
