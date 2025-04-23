@@ -10,10 +10,11 @@
 #include <windows.h>
 #include <tchar.h>
 #include <algorithm>
-
+#include <iostream>
 #ifndef SCI_GETTEXT
 #define SCI_GETTEXT 2182
 #endif
+
 
 #ifndef SCI_GETLENGTH
 #define SCI_GETLENGTH 2006
@@ -61,7 +62,16 @@ void showError(const TCHAR* message) {
     ::MessageBox(nppData._nppHandle, message, TEXT("HPP to C# Offset Populator Error"), MB_OK | MB_ICONERROR);
 }
 
-std::string getFileContent(const std::wstring& /*filePath*/) {
+//it always grabs the content of whatever document is currently active in Notepad++.
+std::string getFileContent(const std::wstring& filePath) {
+    // Switch to the specified file in Notepad++
+    if (!::SendMessage(nppData._nppHandle, NPPM_SWITCHTOFILE, 0, (LPARAM)filePath.c_str())) {
+        std::wstring errorMsg = L"Failed to switch to file: " + filePath;
+        ::MessageBox(nppData._nppHandle, errorMsg.c_str(), TEXT("Debug: File Switch Error"), MB_OK | MB_ICONERROR);
+        return "";
+    }
+
+    // Get the current Scintilla editor handle
     HWND curScintilla;
     int which = -1;
     ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
@@ -75,7 +85,6 @@ std::string getFileContent(const std::wstring& /*filePath*/) {
     return std::string(buffer.data(), textLength);
 }
 
-// Get all open .hpp files and validate required files
 bool getOpenHPPFiles(std::vector<std::wstring>& hppFiles, std::wstring& missingFiles) {
     std::vector<std::wstring> requiredFiles = {
         L"Engine_classes.hpp",
@@ -83,51 +92,43 @@ bool getOpenHPPFiles(std::vector<std::wstring>& hppFiles, std::wstring& missingF
         L"Squad_classes.hpp",
         L"Squad_structs.hpp"
     };
-    std::set<std::wstring, std::less<>> foundFiles; // std::less<> is case-sensitive, but we'll handle case below
-    TCHAR filePath[MAX_PATH];
+    std::set<std::wstring, std::less<>> foundFiles;
 
-    // Temporary debug string to see what files are detected
-    std::wstring debugMsg = L"Detected .hpp files:\n";
+    int nbOpenFiles = ::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+    if (nbOpenFiles <= 0) {
+        missingFiles = L"No open files found.";
+        return false;
+    }
 
-    for (int i = 0; ; i++) {
-        for (int i = 0; ; i++) {
-for (int i = 0; ; i++) {
-    LRESULT result = ::SendMessage(nppData._nppHandle, NPPM_GETFULLPATHFROMBUFFERID, i, (LPARAM)filePath);
-    if (result == -1) {
-        if (i == 0) { // Only show the error message once for ID 0
-            std::wstring debugMsg = L"SendMessage returned -1 for buffer ID: " + std::to_wstring(i) + L"\n";
-            ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Buffer ID Failure"), MB_OK | MB_ICONINFORMATION);
-        }
-        break; // Exit the loop
+    std::vector<TCHAR*> filePaths(nbOpenFiles);
+    for (int i = 0; i < nbOpenFiles; ++i) {
+        filePaths[i] = new TCHAR[MAX_PATH];
     }
-    std::wstring path(filePath);
-    if (path.length() >= 4 && _wcsicmp(path.substr(path.length() - 4).c_str(), L".hpp") == 0) {
-        // Process .hpp file
-    }
-}
-            LRESULT result = ::SendMessage(nppData._nppHandle, NPPM_GETFULLPATHFROMBUFFERID, i, (LPARAM)filePath);
-            if (result == -1) {
-                std::wstring debugMsg = L"SendMessage returned -1 for buffer ID: " + std::to_wstring(i) + L"\n";
-                ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Buffer ID Failure"), MB_OK | MB_ICONINFORMATION);
-                break;
-            }
-            std::wstring path(filePath);
-            if (path.length() >= 4 && _wcsicmp(path.substr(path.length() - 4).c_str(), L".hpp") == 0) {
-                // Process .hpp file
-            }
+
+    BOOL result = ::SendMessage(nppData._nppHandle, NPPM_GETOPENFILENAMES, (WPARAM)filePaths.data(), nbOpenFiles);
+    if (!result) {
+        missingFiles = L"Failed to retrieve open file names.";
+        for (int i = 0; i < nbOpenFiles; ++i) {
+            delete[] filePaths[i];
         }
-        std::wstring path(filePath);
+        return false;
+    }
+
+    std::vector<std::pair<std::wstring, bool>> fileList; // Pair of (file path, isStructsFile)
+    std::wstring debugMsg = L"Detected open files:\n";
+    for (int i = 0; i < nbOpenFiles; ++i) {
+        std::wstring path(filePaths[i]);
+        debugMsg += path + L"\n";
+
         if (path.length() >= 4 && _wcsicmp(path.substr(path.length() - 4).c_str(), L".hpp") == 0) {
             std::wstring::size_type lastSep = path.find_last_of(L"\\/");
             std::wstring fileName = (lastSep != std::wstring::npos) ? path.substr(lastSep + 1) : path;
 
-            // Add to debug message
-            debugMsg += fileName + L"\n";
+            bool isStructsFile = (fileName.find(L"_structs.hpp") != std::wstring::npos);
+            fileList.emplace_back(path, isStructsFile);
 
-            // Case-insensitive comparison for required files
             for (const auto& reqFile : requiredFiles) {
                 if (_wcsicmp(fileName.c_str(), reqFile.c_str()) == 0) {
-                    hppFiles.push_back(path);
                     foundFiles.insert(fileName);
                     break;
                 }
@@ -135,10 +136,12 @@ for (int i = 0; ; i++) {
         }
     }
 
-    // Show debug message (remove this after confirming the issue)
-    ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Detected .hpp Files"), MB_OK | MB_ICONINFORMATION);
+    for (int i = 0; i < nbOpenFiles; ++i) {
+        delete[] filePaths[i];
+    }
 
-    // Check for missing required files
+    ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Detected Open Files"), MB_OK | MB_ICONINFORMATION);
+
     std::vector<std::wstring> missing;
     for (const auto& reqFile : requiredFiles) {
         bool found = false;
@@ -161,6 +164,22 @@ for (int i = 0; ; i++) {
         }
         return false;
     }
+
+    // Sort files: prioritize *_structs.hpp files
+    std::sort(fileList.begin(), fileList.end(), [](const auto& a, const auto& b) {
+        // If a is a structs file and b is not, a comes first
+        if (a.second && !b.second) return true;
+        // If b is a structs file and a is not, b comes first
+        if (!a.second && b.second) return false;
+        // Otherwise, sort alphabetically
+        return a.first < b.first;
+        });
+
+    // Extract just the file paths
+    for (const auto& file : fileList) {
+        hppFiles.push_back(file.first);
+    }
+
     return true;
 }
 
@@ -182,66 +201,99 @@ std::set<std::string> parseOffsetsStructs(const std::string& content) {
     return structNames;
 }
 
-// Parse .hpp file for a specific struct and extract fields
 bool parseHPPForStruct(const std::string& content, const std::string& structName, std::string& output) {
     std::stringstream result;
     std::istringstream iss(content);
     std::string line;
     bool insideStruct = false;
     bool foundStruct = false;
+    bool awaitingBrace = false;
 
-    // Regex for struct start, allowing for 'final' keyword and 'class' or 'struct'
-    std::regex structStartPattern(R"((?:struct|class)\s+" + structName + R"\s*(?:final)?\s*\{)");
-    // Regex for fields, e.g., "float UnclampedTotalSway; // 0x0074 (metadata)"
-    std::regex fieldPattern(R"(\s*(?:struct\s+)?(\w+)\s+(\w+)\s*;\s*//\s*0x([0-9A-Fa-f]+)\s*(?:\([^\)]*\))?(?:.*))");
-    // Regex to skip padding fields like "uint8 Pad_60[0x14];"
-    std::regex paddingPattern(R"(\s*uint8\s+Pad_\w+\[\w+\]\s*;\s*//\s*0x[0-9A-Fa-f]+\s*(?:.*))");
+    try {
+        std::regex structStartPattern(R"((?:struct|class)\s+)" + structName + R"(\s*(?:final)?)");
+        std::regex bracePattern(R"(\s*\{)");
+        std::regex fieldPattern(R"(\s*(?:struct\s+)?(\w+)\s+(\w+)\s*;\s*//\s*0x([0-9A-Fa-f]+)(?:\([^()]*\)?)?(?:.*))");
+        std::regex paddingPattern(R"(\s*uint8\s+Pad_\w+\[\w+\]\s*;\s*//\s*0x[0-9A-Fa-f]+\s*(?:.*))");
+        // Pattern to detect a member variable (e.g., "struct FSQSwayData SwayData;")
+        std::regex memberPattern(R"(\s*(?:struct|class)\s+)" + structName + R"(\s+\w+\s*;\s*//\s*0x[0-9A-Fa-f]+)");
 
-    while (std::getline(iss, line)) {
-        line.erase(0, line.find_first_not_of(" \t"));
-        line.erase(line.find_last_not_of(" \t") + 1);
+        while (std::getline(iss, line)) {
+            size_t start = 0;
+            while (start < line.length() && std::isspace(static_cast<unsigned char>(line[start]))) start++;
+            line.erase(0, start);
+            size_t end = line.length();
+            while (end > 0 && std::isspace(static_cast<unsigned char>(line[end - 1]))) end--;
+            line.erase(end);
 
-        if (!insideStruct) {
-            std::smatch matches;
-            if (std::regex_search(line, matches, structStartPattern)) {
-                insideStruct = true;
-                foundStruct = true;
-                result << "    public struct " << structName << "\n    {\n";
+            if (!insideStruct && !awaitingBrace) {
+                std::smatch matches;
+                if (std::regex_search(line, matches, structStartPattern)) {
+                    // Check if this is a member variable (e.g., "struct FSQSwayData SwayData;")
+                    if (std::regex_search(line, memberPattern)) {
+                        continue; // Skip member variables
+                    }
+                    awaitingBrace = true;
+                    foundStruct = true;
+                    result << "    public struct " << structName << "\n    {\n";
+                    if (std::regex_search(line, bracePattern)) {
+                        awaitingBrace = false;
+                        insideStruct = true;
+                    }
+                    continue;
+                }
+            }
+            else if (awaitingBrace) {
+                if (std::regex_search(line, bracePattern)) {
+                    awaitingBrace = false;
+                    insideStruct = true;
+                }
                 continue;
+            }
+            else {
+                std::wstring debugMsg = L"Processing line inside struct: " + stringToWstring(line);
+                ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Inside Struct"), MB_OK | MB_ICONINFORMATION);
+
+                if (std::regex_match(line, paddingPattern)) {
+                    continue;
+                }
+
+                std::smatch matches;
+                if (std::regex_search(line, matches, fieldPattern)) {
+                    std::string fieldType = matches[1].str();
+                    std::string fieldName = matches[2].str();
+                    std::string offset = matches[3].str();
+                    std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
+                    result << "        public const uint " << fieldName << " = 0x" << offset << "; // " << fieldType << "\n";
+                    std::wstring debugMsg = L"Matched field: " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
+                    ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Field Match"), MB_OK | MB_ICONINFORMATION);
+                }
+                if (line.find("};") != std::string::npos) {
+                    insideStruct = false;
+                    result << "    }\n\n";
+                    output = result.str();
+                    return true;
+                }
             }
         }
-        else {
-            // Skip padding fields
-            if (std::regex_match(line, paddingPattern)) {
-                continue;
-            }
 
-            std::smatch matches;
-            if (std::regex_search(line, matches, fieldPattern)) {
-                std::string fieldType = matches[1].str();
-                std::string fieldName = matches[2].str();
-                std::string offset = matches[3].str();
-                // Convert offset to lowercase
-                std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
-
-                // All fields use uint in C#
-                result << "        public const uint " << fieldName << " = 0x" << offset << "; // " << fieldType << "\n";
-            }
-            if (line.find("};") != std::string::npos) {
-                insideStruct = false;
-                result << "    }\n\n";
-                output = result.str();
-                return true;
-            }
+        if (foundStruct) {
+            result << "    }\n\n";
+            output = result.str();
         }
     }
-    return foundStruct;
+    catch (const std::regex_error& e) {
+        std::wstring errorMsg = L"Regex error in parseHPPForStruct: " + stringToWstring(e.what()) + L" (code: " + stringToWstring(std::to_string(e.code())) + L")";
+        showError(errorMsg.c_str());
+        return false;
+    }
+
+    return foundStruct && !output.empty();
 }
+
 
 void populateOffsetsFromHPP()
 {
     try {
-        // Get current file path (should be Offsets.cs)
         TCHAR currentFile[MAX_PATH];
         if (::SendMessage(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile) == 0) {
             showError(TEXT("Failed to get current file path."));
@@ -259,21 +311,18 @@ void populateOffsetsFromHPP()
             return;
         }
 
-        // Read Offsets.cs content
         std::string offsetsContent = getFileContent(currentFilePath);
         if (offsetsContent.empty()) {
             showError(TEXT("Offsets.cs is empty."));
             return;
         }
 
-        // Parse struct names from Offsets.cs
         std::set<std::string> structNames = parseOffsetsStructs(offsetsContent);
         if (structNames.empty()) {
             showError(TEXT("No structs found in Offsets.cs."));
             return;
         }
 
-        // Get all open .hpp files and validate required files
         std::vector<std::wstring> hppFiles;
         std::wstring missingFiles;
         if (!getOpenHPPFiles(hppFiles, missingFiles)) {
@@ -282,7 +331,6 @@ void populateOffsetsFromHPP()
             return;
         }
 
-        // Process each struct
         std::stringstream newOffsetsContent;
         newOffsetsContent << "namespace Offsets\n{\n";
         std::set<std::string> processedStructs;
@@ -298,7 +346,7 @@ void populateOffsetsFromHPP()
                     newOffsetsContent << structOutput;
                     processedStructs.insert(structName);
                     found = true;
-                    break; // Stop searching other .hpp files once found
+                    break;
                 }
             }
             if (!found) {
@@ -312,7 +360,10 @@ void populateOffsetsFromHPP()
 
         newOffsetsContent << "}\n";
 
-        // Write updated Offsets.cs
+        // Debug: Show the new content before writing
+        std::wstring debugContent = stringToWstring(newOffsetsContent.str());
+        ::MessageBox(nppData._nppHandle, debugContent.c_str(), TEXT("Debug: New Offsets.cs Content"), MB_OK | MB_ICONINFORMATION);
+
         std::wofstream outFile(currentFilePath, std::ios::out | std::ios::trunc);
         if (!outFile.is_open()) {
             showError(TEXT("Failed to write to Offsets.cs."));
@@ -321,7 +372,8 @@ void populateOffsetsFromHPP()
         outFile << stringToWstring(newOffsetsContent.str());
         outFile.close();
 
-        // Reload Offsets.cs in Notepad++
+        // Restore the original active file (Offsets.cs)
+        ::SendMessage(nppData._nppHandle, NPPM_SWITCHTOFILE, 0, (LPARAM)currentFilePath.c_str());
         ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)currentFilePath.c_str());
         ::SendMessage(nppData._nppHandle, NPPM_SETCURRENTLANGTYPE, 0, L_CS);
 
