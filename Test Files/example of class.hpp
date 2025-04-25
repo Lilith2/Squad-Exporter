@@ -1,3 +1,5 @@
+// Class Engine.Actor
+// 0x0200 (0x0228 - 0x0028)
 class AActor : public UObject
 {
 public:

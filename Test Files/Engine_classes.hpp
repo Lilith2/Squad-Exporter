@@ -32463,4 +32463,3 @@ static_assert(sizeof(AVolumetricLightmapDensityVolume) == 0x000268, "Wrong size 
 static_assert(offsetof(AVolumetricLightmapDensityVolume, AllowedMipLevelRange) == 0x000260, "Member 'AVolumetricLightmapDensityVolume::AllowedMipLevelRange' has a wrong offset!");
 
 }
-
