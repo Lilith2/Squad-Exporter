@@ -210,8 +210,9 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
     bool insideStruct = false;
     bool foundStruct = false;
     bool awaitingBrace = false;
-    bool seenFieldsSection = false; // Track if we've seen the fields section
+    bool seenFieldsSection = false; // Track if we've seen the first "public:"
     bool parsingFields = true;      // Track if we're still parsing fields
+    int accessSpecifierCount = 0;   // Count "public:", "private:", "protected:"
 
     try {
         std::regex structStartPattern(R"((?:struct|class)\s+)" + structName + R"(\s*(?:final)?)");
@@ -222,8 +223,15 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
         std::regex bitPaddingPattern(R"(\s*uint8\s+BitPad_\w+\s*:\s*\d+\s*;\s*(?:.*))");
         std::regex memberPattern(R"(\s*(?:struct|class)\s+)" + structName + R"(\s+\w+\s*;\s*//\s*0x[0-9A-Fa-f]+)");
         std::regex accessSpecifierPattern(R"(\s*(public|private|protected)\s*:)");
+        // Enhanced method pattern to catch more method signatures
+        std::regex methodPattern(R"(\s*(?:virtual\s+)?(?:void|bool|float|int32|uint8|uint32|int64|uint64|double|class\s+\w+\*|struct\s+\w+\*|TArray\s*<[^>]+>|F[A-Za-z]+|U[A-Za-z]+|[A-Z]\w*)\s+\w+\s*\([^()]*\)\s*(?:const\s*)?(?:override\s*)?(?:;\s*)?)");
+        std::regex constructorPattern(R"(\s*)" + structName + R"(\s*\([^()]*\)\s*;)");
+        std::regex destructorPattern(R"(\s*~\s*)" + structName + R"(\s*\([^()]*\)\s*;)");
+
+        result << "    public struct " << structName << "\n    {\n";
 
         while (std::getline(iss, line)) {
+            // Trim whitespace
             size_t start = 0;
             while (start < line.length() && std::isspace(static_cast<unsigned char>(line[start]))) start++;
             line.erase(0, start);
@@ -239,11 +247,10 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                     }
                     awaitingBrace = true;
                     foundStruct = true;
-                    result << "    public struct " << structName << "\n    {\n";
-                    if (std::regex_search(line, bracePattern)) {
-                        awaitingBrace = false;
-                        insideStruct = true;
-                    }
+#ifdef verbose_debug
+                    std::wstring debugMsg = L"Found struct/class: " + stringToWstring(structName);
+                    ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Struct Start"), MB_OK | MB_ICONINFORMATION);
+#endif
                     continue;
                 }
             }
@@ -255,35 +262,55 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                 continue;
             }
             else {
-                // Check for access specifiers (e.g., "public:", "private:")
+                // Check for access specifiers
                 std::smatch accessMatches;
                 if (std::regex_search(line, accessMatches, accessSpecifierPattern)) {
-                    if (!seenFieldsSection) {
-                        seenFieldsSection = true; // First "public:" before fields
+                    accessSpecifierCount++;
+                    if (accessSpecifierCount == 1) {
+                        seenFieldsSection = true; // First access specifier before fields
                     }
-                    else {
-                        parsingFields = false; // Second "public:" before methods, stop parsing fields
+                    else if (accessSpecifierCount >= 2) {
+                        parsingFields = false; // Second access specifier, stop parsing fields
+#ifdef verbose_debug
+                        std::wstring debugMsg = L"Stopping field parsing for " + stringToWstring(structName) + L" after second access specifier";
+                        ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Access Specifier"), MB_OK | MB_ICONINFORMATION);
+#endif
                     }
                     continue;
                 }
 
-                if (!parsingFields) {
+                // Stop parsing if we're past the fields section or if the line is a method, constructor, or destructor
+                if (!parsingFields ||
+                    std::regex_match(line, methodPattern) ||
+                    std::regex_match(line, constructorPattern) ||
+                    std::regex_match(line, destructorPattern)) {
                     if (line.find("};") != std::string::npos) {
                         insideStruct = false;
                         result << "    }\n\n";
                         output = result.str();
                         return true;
                     }
+#ifdef verbose_debug
+                    if (std::regex_match(line, methodPattern)) {
+                        std::wstring debugMsg = L"Skipped method in " + stringToWstring(structName) + L": " + stringToWstring(line);
+                        ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Method Skipped"), MB_OK | MB_ICONINFORMATION);
+                    }
+#endif
                     continue;
                 }
+
 #ifdef verbose_debug
-                std::wstring debugMsg = L"Processing line inside struct: " + stringToWstring(line);
+                // Debug: Log the line being processed
+                std::wstring debugMsg = L"Processing line inside struct " + stringToWstring(structName) + L": " + stringToWstring(line);
                 ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Inside Struct"), MB_OK | MB_ICONINFORMATION);
 #endif
+
+                // Skip padding fields
                 if (std::regex_match(line, paddingPattern) || std::regex_match(line, bitPaddingPattern)) {
                     continue;
                 }
 
+                // Match bitfields
                 std::smatch matches;
                 if (std::regex_search(line, matches, bitfieldPattern)) {
                     std::string fieldName = matches[1].str();
@@ -291,10 +318,11 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                     std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
                     result << "        public const uint " << fieldName << " = 0x" << offset << "; // uint8\n";
 #ifdef verbose_debug
-                    std::wstring debugMsg = L"Matched bitfield: " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
+                    std::wstring debugMsg = L"Matched bitfield in " + stringToWstring(structName) + L": " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
                     ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Bitfield Match"), MB_OK | MB_ICONINFORMATION);
 #endif
                 }
+                // Match regular fields
                 else if (std::regex_search(line, matches, fieldPattern)) {
                     std::string fieldType = matches[1].str();
                     if (fieldType.empty()) {
@@ -308,33 +336,26 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                     std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
                     result << "        public const uint " << fieldName << " = 0x" << offset << "; // " << fieldType << "\n";
 #ifdef verbose_debug
-                    std::wstring debugMsg = L"Matched field: " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
+                    std::wstring debugMsg = L"Matched field in " + stringToWstring(structName) + L": " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
                     ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Field Match"), MB_OK | MB_ICONINFORMATION);
-                }
 #endif
-                if (line.find("};") != std::string::npos) {
-                    insideStruct = false;
-                    result << "    }\n\n";
-                    output = result.str();
-                    return true;
-                }
                 }
             }
+        }
 
+        // Close the struct if we reach the end of the file
         if (foundStruct) {
             result << "    }\n\n";
             output = result.str();
         }
-        }
-    
     }
     catch (const std::regex_error& e) {
         std::wstring errorMsg = L"Regex error in parseHPPForStruct: " + stringToWstring(e.what()) + L" (code: " + stringToWstring(std::to_string(e.code())) + L")";
         showError(errorMsg.c_str());
         return false;
-
-        return foundStruct && !output.empty();
     }
+
+    return foundStruct && !output.empty();
 }
 
 
@@ -397,19 +418,12 @@ void populateOffsetsFromHPP()
                 }
             }
             if (!found) {
-                TCHAR msg[256];
-                std::wstring wStructName(structName.begin(), structName.end());
-                _stprintf_s(msg, TEXT("Struct or class '%s' not found in any open .hpp file (Engine_classes.hpp, Engine_structs.hpp, Squad_classes.hpp, Squad_structs.hpp)."), wStructName.c_str());
-                showError(msg);
-                return;
+                newOffsetsContent << "    public struct " << structName << "\n    {\n    }\n\n";
+                processedStructs.insert(structName);
             }
         }
 
         newOffsetsContent << "}\n";
-
-        // Debug: Show the new content before writing
-        std::wstring debugContent = stringToWstring(newOffsetsContent.str());
-        ::MessageBox(nppData._nppHandle, debugContent.c_str(), TEXT("Debug: New Offsets.cs Content"), MB_OK | MB_ICONINFORMATION);
 
         std::wofstream outFile(currentFilePath, std::ios::out | std::ios::trunc);
         if (!outFile.is_open()) {
@@ -419,14 +433,14 @@ void populateOffsetsFromHPP()
         outFile << stringToWstring(newOffsetsContent.str());
         outFile.close();
 
-        // Restore the original active file (Offsets.cs)
         ::SendMessage(nppData._nppHandle, NPPM_SWITCHTOFILE, 0, (LPARAM)currentFilePath.c_str());
         ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)currentFilePath.c_str());
         ::SendMessage(nppData._nppHandle, NPPM_SETCURRENTLANGTYPE, 0, L_CS);
-
+#ifdef verbose_debug
         TCHAR msg[256];
         _stprintf_s(msg, TEXT("Successfully populated %zu structs in Offsets.cs."), processedStructs.size());
         ::MessageBox(nppData._nppHandle, msg, TEXT("HPP to C# Offset Populator"), MB_OK | MB_ICONINFORMATION);
+#endif
     }
     catch (...) {
         showError(TEXT("An unexpected error occurred while processing."));
