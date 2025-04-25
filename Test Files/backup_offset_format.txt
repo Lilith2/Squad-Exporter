@@ -135,37 +135,4 @@ namespace Offsets
     public struct AWorldSettings
     {
     }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
-    public struct 
-    {
-    }
 }
