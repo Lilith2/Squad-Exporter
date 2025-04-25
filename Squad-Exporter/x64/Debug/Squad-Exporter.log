@@ -1,6 +1,7 @@
 ﻿  PluginDefinition.cpp
 C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\src\PluginDefinition.cpp(99,21): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
 C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\src\PluginDefinition.cpp(110,17): warning C4244: 'initializing': conversion from 'LRESULT' to 'BOOL', possible loss of data
+C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\src\PluginDefinition.cpp(338,1): warning C4715: 'parseHPPForStruct': not all control paths return a value
   LINK : C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\x64\Debug\Squad-Exporter.dll not found or not built by the last incremental link; performing full link
      Creating library C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\x64\Debug\Squad-Exporter.lib and object C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\x64\Debug\Squad-Exporter.exp
   Squad-Exporter.vcxproj -> C:\Users\ShalltearMoist\Documents\GitHub\Squad-Exporter\x64\Debug\Squad-Exporter.dll

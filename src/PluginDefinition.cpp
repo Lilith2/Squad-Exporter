@@ -210,14 +210,18 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
     bool insideStruct = false;
     bool foundStruct = false;
     bool awaitingBrace = false;
+    bool seenFieldsSection = false; // Track if we've seen the fields section
+    bool parsingFields = true;      // Track if we're still parsing fields
 
     try {
         std::regex structStartPattern(R"((?:struct|class)\s+)" + structName + R"(\s*(?:final)?)");
         std::regex bracePattern(R"(\s*\{)");
-        std::regex fieldPattern(R"(\s*(?:struct\s+)?(\w+)\s+(\w+)\s*;\s*//\s*0x([0-9A-Fa-f]+)(?:\([^()]*\)?)?(?:.*))");
+        std::regex fieldPattern(R"(\s*(?:struct\s+|class\s+|TArray\s*<[^>]+>|TWeakObjectPtr\s*<[^>]+>|FMulticastSparseDelegateProperty_\s*)?(\w+)\s+(\w+)\s*;\s*//\s*0x([0-9A-Fa-f]+)(?:\([^()]*\)?)?(?:.*[^,]))");
+        std::regex bitfieldPattern(R"(\s*uint8\s+(\w+)\s*:\s*1\s*;\s*//\s*0x([0-9A-Fa-f]+)(?:\([^()]*\)?)?(?:.*))");
         std::regex paddingPattern(R"(\s*uint8\s+Pad_\w+\[\w+\]\s*;\s*//\s*0x[0-9A-Fa-f]+\s*(?:.*))");
-        // Pattern to detect a member variable (e.g., "struct FSQSwayData SwayData;")
+        std::regex bitPaddingPattern(R"(\s*uint8\s+BitPad_\w+\s*:\s*\d+\s*;\s*(?:.*))");
         std::regex memberPattern(R"(\s*(?:struct|class)\s+)" + structName + R"(\s+\w+\s*;\s*//\s*0x[0-9A-Fa-f]+)");
+        std::regex accessSpecifierPattern(R"(\s*(public|private|protected)\s*:)");
 
         while (std::getline(iss, line)) {
             size_t start = 0;
@@ -230,9 +234,8 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
             if (!insideStruct && !awaitingBrace) {
                 std::smatch matches;
                 if (std::regex_search(line, matches, structStartPattern)) {
-                    // Check if this is a member variable (e.g., "struct FSQSwayData SwayData;")
                     if (std::regex_search(line, memberPattern)) {
-                        continue; // Skip member variables
+                        continue;
                     }
                     awaitingBrace = true;
                     foundStruct = true;
@@ -252,17 +255,54 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
                 continue;
             }
             else {
+                // Check for access specifiers (e.g., "public:", "private:")
+                std::smatch accessMatches;
+                if (std::regex_search(line, accessMatches, accessSpecifierPattern)) {
+                    if (!seenFieldsSection) {
+                        seenFieldsSection = true; // First "public:" before fields
+                    }
+                    else {
+                        parsingFields = false; // Second "public:" before methods, stop parsing fields
+                    }
+                    continue;
+                }
+
+                if (!parsingFields) {
+                    if (line.find("};") != std::string::npos) {
+                        insideStruct = false;
+                        result << "    }\n\n";
+                        output = result.str();
+                        return true;
+                    }
+                    continue;
+                }
 #ifdef verbose_debug
                 std::wstring debugMsg = L"Processing line inside struct: " + stringToWstring(line);
                 ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Inside Struct"), MB_OK | MB_ICONINFORMATION);
 #endif
-                if (std::regex_match(line, paddingPattern)) {
+                if (std::regex_match(line, paddingPattern) || std::regex_match(line, bitPaddingPattern)) {
                     continue;
                 }
 
                 std::smatch matches;
-                if (std::regex_search(line, matches, fieldPattern)) {
+                if (std::regex_search(line, matches, bitfieldPattern)) {
+                    std::string fieldName = matches[1].str();
+                    std::string offset = matches[2].str();
+                    std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
+                    result << "        public const uint " << fieldName << " = 0x" << offset << "; // uint8\n";
+#ifdef verbose_debug
+                    std::wstring debugMsg = L"Matched bitfield: " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
+                    ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Bitfield Match"), MB_OK | MB_ICONINFORMATION);
+#endif
+                }
+                else if (std::regex_search(line, matches, fieldPattern)) {
                     std::string fieldType = matches[1].str();
+                    if (fieldType.empty()) {
+                        fieldType = matches[0].str();
+                        fieldType = fieldType.substr(0, fieldType.find(matches[2].str()));
+                        fieldType = fieldType.substr(0, fieldType.find(';'));
+                        fieldType.erase(std::remove_if(fieldType.begin(), fieldType.end(), ::isspace), fieldType.end());
+                    }
                     std::string fieldName = matches[2].str();
                     std::string offset = matches[3].str();
                     std::transform(offset.begin(), offset.end(), offset.begin(), ::tolower);
@@ -270,29 +310,31 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
 #ifdef verbose_debug
                     std::wstring debugMsg = L"Matched field: " + stringToWstring(fieldName) + L" at offset 0x" + stringToWstring(offset);
                     ::MessageBox(nppData._nppHandle, debugMsg.c_str(), TEXT("Debug: Field Match"), MB_OK | MB_ICONINFORMATION);
-#endif
                 }
+#endif
                 if (line.find("};") != std::string::npos) {
                     insideStruct = false;
                     result << "    }\n\n";
                     output = result.str();
                     return true;
                 }
+                }
             }
-        }
 
         if (foundStruct) {
             result << "    }\n\n";
             output = result.str();
         }
+        }
+    
     }
     catch (const std::regex_error& e) {
         std::wstring errorMsg = L"Regex error in parseHPPForStruct: " + stringToWstring(e.what()) + L" (code: " + stringToWstring(std::to_string(e.code())) + L")";
         showError(errorMsg.c_str());
         return false;
-    }
 
-    return foundStruct && !output.empty();
+        return foundStruct && !output.empty();
+    }
 }
 
 
