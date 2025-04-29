@@ -287,3 +287,32 @@ static_assert(offsetof(AActor, OnDestroyed) == 0x000196, "Member 'AActor::OnDest
 static_assert(offsetof(AActor, OnEndPlay) == 0x000197, "Member 'AActor::OnEndPlay' has a wrong offset!");
 static_assert(offsetof(AActor, InstanceComponents) == 0x0001F8, "Member 'AActor::InstanceComponents' has a wrong offset!");
 static_assert(offsetof(AActor, BlueprintCreatedComponents) == 0x000208, "Member 'AActor::BlueprintCreatedComponents' has a wrong offset!");
+
+
+// ScriptStruct Squad.SQSwayData
+// 0x0094 (0x0094 - 0x0000)
+struct FSQSwayData final
+{
+public:
+	struct FSQSwayAspect                          Aspect;                                            // 0x0000(0x000C)(Edit, BlueprintVisible, NoDestructor, NativeAccessSpecifierPublic)
+	struct FSQSwayDynamicGroup                    DynamicGroup;                                      // 0x000C(0x0020)(Edit, BlueprintVisible, NoDestructor, NativeAccessSpecifierPublic)
+	struct FSQSwayStanceGroup                     StanceGroup;                                       // 0x002C(0x002C)(Edit, BlueprintVisible, NoDestructor, NativeAccessSpecifierPublic)
+	float                                         LocationOffsetMultiplier;                          // 0x0058(0x0004)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
+	struct FSQSwayLimits                          Limits;                                            // 0x005C(0x0004)(Edit, BlueprintVisible, NoDestructor, NativeAccessSpecifierPublic)
+	uint8                                         Pad_60[0x14];                                      // 0x0060(0x0014)(Fixing Size After Last Property [ Dumper-7 ])
+	float                                         UnclampedTotalSway;                                // 0x0074(0x0004)(BlueprintVisible, BlueprintReadOnly, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
+	float                                         TotalSway;                                         // 0x0078(0x0004)(BlueprintVisible, BlueprintReadOnly, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
+	struct FRotator                               Sway;                                              // 0x007C(0x000C)(BlueprintVisible, BlueprintReadOnly, ZeroConstructor, IsPlainOldData, NoDestructor, NativeAccessSpecifierPublic)
+	struct FVector                                LocationOffset;                                    // 0x0088(0x000C)(BlueprintVisible, BlueprintReadOnly, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
+};
+static_assert(alignof(FSQSwayData) == 0x000004, "Wrong alignment on FSQSwayData");
+static_assert(sizeof(FSQSwayData) == 0x000094, "Wrong size on FSQSwayData");
+static_assert(offsetof(FSQSwayData, Aspect) == 0x000000, "Member 'FSQSwayData::Aspect' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, DynamicGroup) == 0x00000C, "Member 'FSQSwayData::DynamicGroup' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, StanceGroup) == 0x00002C, "Member 'FSQSwayData::StanceGroup' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, LocationOffsetMultiplier) == 0x000058, "Member 'FSQSwayData::LocationOffsetMultiplier' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, Limits) == 0x00005C, "Member 'FSQSwayData::Limits' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, UnclampedTotalSway) == 0x000074, "Member 'FSQSwayData::UnclampedTotalSway' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, TotalSway) == 0x000078, "Member 'FSQSwayData::TotalSway' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, Sway) == 0x00007C, "Member 'FSQSwayData::Sway' has a wrong offset!");
+static_assert(offsetof(FSQSwayData, LocationOffset) == 0x000088, "Member 'FSQSwayData::LocationOffset' has a wrong offset!");
