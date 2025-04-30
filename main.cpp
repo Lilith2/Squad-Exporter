@@ -82,7 +82,7 @@ bool parseCppClass(const std::string& content, const std::string& className, std
 
 // Function to display usage instructions
 void displayUsage(const std::string& programName) {
-    std::cout << "Usage: " << programName << " <input_file> <class_name> <output_file>\n";
+    std::cout << "Usage: " << programName << " <input_file> <output_file>\n";
     std::cout << "  <input_file>  - Path to the C++ header file (e.g., example.hpp)\n";
     //std::cout << "  <class_name>  - Name of the class to parse (e.g., AActor)\n";
     std::cout << "  <output_file> - Path to the output C# file (e.g., Offsets.cs)\n";
@@ -90,7 +90,7 @@ void displayUsage(const std::string& programName) {
 
 int main(int argc, char* argv[]) {
 
-    if (argc > 1 && argv[1] == "help" || argc > 1 && argv[1] == "Help") {
+    if (argc > 1 && (std::string(argv[1]) == "help" || std::string(argv[1]) == "Help") || argc < 2) {
 		displayUsage(argv[0]);
 		return 0;
     }
