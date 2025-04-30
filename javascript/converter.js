@@ -1,0 +1,811 @@
+// C++ Header to C# Offset Converter
+// Extracts struct/class definitions from C++ header files and generates C# offset structs
+
+/**
+ * Browser Implementation
+ * Processes C++ header files (.hpp) and generates C# offset structs in a .cs file
+ */
+function browserHppToCSharpConverter() {
+  // Create file input for C++ header files
+  const headerFilesInput = document.createElement('input');
+  headerFilesInput.type = 'file';
+  headerFilesInput.multiple = true;
+  headerFilesInput.accept = '.hpp'; // Only accept .hpp files
+
+  // Add label for header files
+  const headerLabel = document.createElement('label');
+  headerLabel.textContent = 'Select C++ header files (max 4):';
+  headerLabel.htmlFor = 'headerFiles';
+  headerFilesInput.id = 'headerFiles';
+
+  // Create file input for C# request file
+  const requestFileInput = document.createElement('input');
+  requestFileInput.type = 'file';
+  requestFileInput.accept = '.cs'; // Only accept .cs files
+
+  // Add label for request file
+  const requestLabel = document.createElement('label');
+  requestLabel.textContent = 'Select C# request file:';
+  requestLabel.htmlFor = 'requestFile';
+  requestFileInput.id = 'requestFile';
+
+  // Create a button to trigger processing
+  const processButton = document.createElement('button');
+  processButton.textContent = 'Process Files';
+  processButton.disabled = true;
+
+  // Create download button for results
+  const downloadButton = document.createElement('button');
+  downloadButton.textContent = 'Download Results';
+  downloadButton.style.display = 'none';
+
+  // Create status area
+  const statusArea = document.createElement('div');
+  statusArea.style.margin = '10px 0';
+  statusArea.textContent = 'Select files to begin...';
+
+  // Create results preview area
+  const resultsArea = document.createElement('pre');
+  resultsArea.style.border = '1px solid #ccc';
+  resultsArea.style.padding = '10px';
+  resultsArea.style.maxHeight = '400px';
+  resultsArea.style.overflow = 'auto';
+  resultsArea.style.backgroundColor = '#f5f5f5';
+  resultsArea.style.fontSize = '12px';
+  resultsArea.style.fontFamily = 'Consolas, monospace';
+
+  // Store files and processed content
+  let headerFiles = [];
+  let requestFile = null;
+  let processedRequestFile = '';
+
+  // Add elements to document
+  const container = document.createElement('div');
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.margin = '20px';
+
+  container.appendChild(headerLabel);
+  container.appendChild(document.createElement('br'));
+  container.appendChild(headerFilesInput);
+  container.appendChild(document.createElement('br'));
+  container.appendChild(document.createElement('br'));
+  container.appendChild(requestLabel);
+  container.appendChild(document.createElement('br'));
+  container.appendChild(requestFileInput);
+  container.appendChild(document.createElement('br'));
+  container.appendChild(document.createElement('br'));
+  container.appendChild(processButton);
+  container.appendChild(document.createTextNode(' '));
+  container.appendChild(downloadButton);
+  container.appendChild(statusArea);
+  container.appendChild(resultsArea);
+
+  document.body.appendChild(container);
+
+  // Handle header file selection
+  headerFilesInput.addEventListener('change', () => {
+  const files = headerFilesInput.files;
+
+  if (files.length > 4) {
+    statusArea.textContent = 'Error: Maximum 4 header files allowed. Please select fewer files.';
+    processButton.disabled = true;
+    return;
+  }
+
+  // Verify all files have .hpp extension
+  for (let i = 0; i < files.length; i++) {
+    if (!files[i].name.toLowerCase().endsWith('.hpp')) {
+    statusArea.textContent = `Error: ${files[i].name} is not a .hpp file. Only C++ header files are allowed.`;
+    processButton.disabled = true;
+    return;
+    }
+  }
+
+  headerFiles = Array.from(files);
+  updateStatus();
+  });
+
+  // Handle request file selection
+  requestFileInput.addEventListener('change', () => {
+  const files = requestFileInput.files;
+
+  if (files.length !== 1) {
+    statusArea.textContent = 'Error: Please select exactly one C# request file.';
+    processButton.disabled = true;
+    return;
+  }
+
+  if (!files[0].name.toLowerCase().endsWith('.cs')) {
+    statusArea.textContent = `Error: ${files[0].name} is not a .cs file. Only C# files are allowed for requests.`;
+    processButton.disabled = true;
+    return;
+  }
+
+  requestFile = files[0];
+  updateStatus();
+  });
+
+  // Update status and button state
+  function updateStatus() {
+  if (headerFiles.length > 0 && requestFile) {
+    statusArea.textContent = `Ready to process ${headerFiles.length} header file(s) with request file ${requestFile.name}`;
+    processButton.disabled = false;
+  } else {
+    if (!headerFiles.length && !requestFile) {
+    statusArea.textContent = 'Please select both header files and a request file.';
+    } else if (!headerFiles.length) {
+    statusArea.textContent = 'Please select at least one header file.';
+    } else {
+    statusArea.textContent = 'Please select a C# request file.';
+    }
+    processButton.disabled = true;
+  }
+  }
+
+  // Process files when button is clicked
+  processButton.addEventListener('click', async () => {
+  if (headerFiles.length === 0 || !requestFile) {
+    statusArea.textContent = 'Please select both header files and a request file.';
+    return;
+  }
+
+  resultsArea.textContent = '';
+  statusArea.textContent = 'Processing files...';
+
+  try {
+    // First read the request file to get struct/class names to search for
+    const requestContent = await readFileAsync(requestFile);
+    const structsToFind = extractStructNames(requestContent);
+
+    resultsArea.textContent = `Found ${structsToFind.length} struct(s) to search for: ${structsToFind.join(', ')}\n\n`;
+
+    // Initialize modified request file content with the original
+    processedRequestFile = requestContent;
+
+    // Process each header file
+    for (let i = 0; i < headerFiles.length; i++) {
+    const headerFile = headerFiles[i];
+
+    // Read header file content
+    const headerContent = await readFileAsync(headerFile);
+
+    // Look for each struct in the header file
+    for (const structName of structsToFind) {
+      // Process the header content to find and extract struct definitions
+      const extractedStruct = extractStructDefinition(headerContent, structName);
+
+      if (extractedStruct) {
+      resultsArea.textContent += `Found struct ${structName} in ${headerFile.name}\n`;
+
+      // Parse the struct fields and generate C# code
+      const csharpStruct = generateCSharpOffsetStruct(extractedStruct);
+
+      // Update the request file with the generated C# struct
+      processedRequestFile = updateCSharpRequestFile(processedRequestFile, structName, csharpStruct);
+
+      resultsArea.textContent += `Generated C# offset struct for ${structName}\n\n`;
+      }
+    }
+    }
+
+    // Show a preview of the modified request file
+    resultsArea.textContent += `Updated C# file preview:\n\n`;
+    resultsArea.textContent += processedRequestFile;
+
+    statusArea.textContent = 'Processing complete! You can now download the updated C# file.';
+    downloadButton.style.display = 'inline';
+  } catch (error) {
+    statusArea.textContent = `Error: ${error.message}`;
+    console.error(error);
+  }
+  });
+
+  // Handle download button click
+  downloadButton.addEventListener('click', () => {
+  if (!processedRequestFile) {
+    statusArea.textContent = 'No processed file to download.';
+    return;
+  }
+
+  // Create download link
+  const blob = new Blob([processedRequestFile], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `processed_${requestFile.name}`;
+  document.body.appendChild(a);
+  a.click();
+
+  // Clean up
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 0);
+  });
+
+  // Helper function to read file content as text
+  function readFileAsync(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+    resolve(event.target.result);
+    };
+
+    reader.onerror = (error) => {
+    reject(new Error(`Error reading file: ${file.name}`));
+    };
+
+    reader.readAsText(file);
+  });
+  }
+
+  // Extract struct/class names from C# request file
+  function extractStructNames(csharpContent) {
+  const structNames = [];
+  const lines = csharpContent.split('\n');
+
+  // Regular expression to match struct declarations
+  const structRegex = /\s*public\s+struct\s+(\w+)/;
+
+  for (const line of lines) {
+    const match = line.match(structRegex);
+    if (match && match[1]) {
+    structNames.push(match[1]);
+    }
+  }
+
+  return structNames;
+  }
+
+  // Extract struct definition from C++ header file
+  function extractStructDefinition(headerContent, structName) {
+  // Find the struct/class definition in the header file
+  // First try with exact name
+  let structRegex = new RegExp(`\\b(struct|class)\\s+${structName}\\b[^{]*{([\\s\\S]*?)};`, 'g');
+  let match = structRegex.exec(headerContent);
+
+  // If not found, try without the 'F' prefix if the name starts with F
+  if (!match && structName.startsWith('F')) {
+    const nameWithoutF = structName.substring(1);
+    structRegex = new RegExp(`\\b(struct|class)\\s+${nameWithoutF}\\b[^{]*{([\\s\\S]*?)};`, 'g');
+    match = structRegex.exec(headerContent);
+  }
+
+  // If still not found, try adding an 'F' prefix if the name doesn't start with F
+  if (!match && !structName.startsWith('F')) {
+    const nameWithF = 'F' + structName;
+    structRegex = new RegExp(`\\b(struct|class)\\s+${nameWithF}\\b[^{]*{([\\s\\S]*?)};`, 'g');
+    match = structRegex.exec(headerContent);
+  }
+
+  if (!match) {
+    return null;
+  }
+
+  // Look for offset line usually preceding the struct
+  const structStartPos = match.index;
+  const offsetLineRegex = /\/\/\s+0x([0-9A-F]+)\s+\(0x([0-9A-F]+)\s+-\s+0x([0-9A-F]+)\)/;
+
+  // Search backwards from the struct definition to find the offset line
+  const prevLines = headerContent.substring(Math.max(0, structStartPos - 200), structStartPos);
+  const offsetMatch = prevLines.match(offsetLineRegex);
+
+  // Extract the full struct including metadata
+  const fullStructContent = headerContent.substring(
+    Math.max(0, structStartPos - 200), 
+    structStartPos + match[0].length + 100
+  );
+
+  // Extract size information
+  let size = null;
+  if (offsetMatch) {
+    size = parseInt(offsetMatch[1], 16);
+  }
+
+  return {
+    name: match[0].match(/\b(struct|class)\s+(\w+)/)[2],
+    type: match[0].match(/\b(struct|class)\s+(\w+)/)[1],
+    body: match[2],
+    fullContent: fullStructContent,
+    size
+  };
+  }
+
+  // Parse the struct fields and generate C# code
+  function generateCSharpOffsetStruct(extractedStruct) {
+  const fields = [];
+  const lines = extractedStruct.body.split('\n');
+
+  // Match field declarations with offsets in comments
+  // Format is typically: type fieldName; // 0xXXXX(size) comment
+  let currentOffset = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Skip empty lines and non-field lines
+    if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) {
+    continue;
+    }
+
+    // Look for offset comments like // 0x0000(0x000C)
+    const offsetMatch = line.match(/\/\/\s+0x([0-9A-F]+)\(.*?\)/);
+    if (offsetMatch) {
+    currentOffset = offsetMatch[1].toLowerCase();
+    }
+
+    // Check for bitfield pattern (e.g. uint8 bNetTemporary : 1;)
+    const bitfieldRegex = /^\s*([\w:<>\s]+[\*&]?)\s+(\w+)\s*:\s*(\d+);(?:\s*\/\/\s*(.*)?)?/;
+    const bitfieldMatch = line.match(bitfieldRegex);
+
+    if (bitfieldMatch) {
+    // Extract bitfield information
+    const fieldType = bitfieldMatch[1].trim();
+    const fieldName = bitfieldMatch[2].trim();
+    const bitNumber = bitfieldMatch[3].trim();
+    let fieldComment = bitfieldMatch[4] ? bitfieldMatch[4].trim() : '';
+
+    // Extract offset from comment if present
+    let fieldOffset = currentOffset;
+    const offsetInComment = fieldComment.match(/0x([0-9A-F]+)/);
+    if (offsetInComment) {
+      fieldOffset = offsetInComment[0].toLowerCase();
+    }
+
+    // Create proper bitfield name using the format: bitfield_0xOFFSET_BITNUMBER
+    // This ensures variable names are valid in C# (not starting with numbers)
+    const properName = `bitfield_${fieldOffset}_${bitNumber}`;
+
+    // Add original field name and type to comment
+    fieldComment = `${fieldName} : ${bitNumber} (${fieldType}) ${fieldComment}`;
+
+    // Add field to list
+    if (fieldOffset) {
+      fields.push({
+      name: properName,
+      type: fieldType,
+      offset: fieldOffset,
+      comment: fieldComment
+      });
+    }
+    } else {
+    // Match individual field declarations (non-bitfield)
+    // This regex handles common C++ field patterns while avoiding method declarations
+    const fieldRegex = /^\s*([\w:<>\s]+[\*&]?)\s+(\w+);(?:\s*\/\/\s*(0x[0-9A-F]+)(?:\(.*?\))?\s*(.*))?/;
+    const fieldMatch = line.match(fieldRegex);
+
+    if (fieldMatch) {
+      // Extract field information
+      const fieldType = fieldMatch[1].trim();
+      const fieldName = fieldMatch[2].trim();
+      const fieldOffset = fieldMatch[3] ? fieldMatch[3].toLowerCase() : currentOffset;
+      let fieldComment = fieldMatch[4] ? fieldMatch[4].trim() : '';
+
+      // Skip pad fields
+      if (fieldName.startsWith('Pad_') || fieldName.startsWith('pad_')) {
+      continue;
+      }
+
+      // Add field type to comment if not already present
+      if (!fieldComment.includes(fieldType)) {
+      fieldComment = fieldType;
+      }
+
+      // Add field to list
+      if (fieldOffset) {
+      fields.push({
+        name: fieldName,
+        type: fieldType,
+        offset: fieldOffset,
+        comment: fieldComment
+      });
+      }
+    } else {
+      // Check for alternative field pattern with offset at end
+      // Example: float LocationOffsetMultiplier; // 0x0058(0x0004) (Edit, ...)
+      // Or: TArray<class UActorComponent*> InstanceComponents; // 0x01F8(0x0010) (ExportObject, ...)
+      const altFieldRegex = /^\s*([\w:<>\s\*&]+)\s+(\w+);(?:\s*\/\/\s*(.*))?/;
+      const altMatch = line.match(altFieldRegex);
+
+      if (altMatch) {
+      const fieldType = altMatch[1].trim();
+      const fieldName = altMatch[2].trim();
+      let fieldComment = altMatch[3] ? altMatch[3].trim() : '';
+
+      // Extract offset from the comment if present
+      let fieldOffset = null;
+      const offsetInComment = fieldComment.match(/0x([0-9A-F]+)/);
+      if (offsetInComment) {
+        fieldOffset = offsetInComment[0].toLowerCase();
+      } else if (currentOffset) {
+        // Use current offset if we can't find one in the comment
+        fieldOffset = currentOffset;
+      }
+
+      // Skip pad fields
+      if (fieldName.startsWith('Pad_') || fieldName.startsWith('pad_')) {
+        continue;
+      }
+
+      // Make field type part of the comment
+      fieldComment = `${fieldType} ${fieldComment}`;
+
+      // Add field to list if we have an offset
+      if (fieldOffset) {
+        fields.push({
+        name: fieldName,
+        type: fieldType,
+        offset: fieldOffset,
+        comment: fieldComment
+        });
+      }
+      }
+    }
+    }
+  }
+
+  // Generate C# struct fields
+  const csharpFields = fields.map(field => {
+    return `        public const uint ${field.name} = ${field.offset}; // ${field.comment}`;
+  }).join('\n');
+
+  return csharpFields;
+  }
+
+  // Update the C# request file with the generated struct
+  function updateCSharpRequestFile(csharpContent, structName, generatedFields) {
+  // Find the empty struct declaration
+  const structRegex = new RegExp(`(\\s*public\\s+struct\\s+${structName}\\s*{\\s*)(})`);
+
+  // If the struct exists, replace its content
+  if (csharpContent.match(structRegex)) {
+    return csharpContent.replace(structRegex, `$1\n${generatedFields}\n    $2`);
+  }
+
+  // If struct not found, look for one with F prefix or without F prefix
+  let altStructName = structName;
+  if (structName.startsWith('F')) {
+    altStructName = structName.substring(1);
+  } else {
+    altStructName = 'F' + structName;
+  }
+
+  const altStructRegex = new RegExp(`(\\s*public\\s+struct\\s+${altStructName}\\s*{\\s*)(})`);
+  if (csharpContent.match(altStructRegex)) {
+    return csharpContent.replace(altStructRegex, `$1\n${generatedFields}\n    $2`);
+  }
+
+  // If not found at all, return unchanged content
+  return csharpContent;
+  }
+}
+
+/**
+ * Node.js Implementation
+ * Processes C++ header files (.hpp) and generates C# offset structs in a .cs file
+ */
+function nodeHppToCSharpConverter() {
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  /**
+   * Main processing function
+   * @param {string[]} headerFilePaths - Array of paths to .hpp files (max 4)
+   * @param {string} requestFilePath - Path to .cs request file
+   * @returns {Promise<string>} - Path to the updated request file
+   */
+  async function processHeaderFiles(headerFilePaths, requestFilePath) {
+  if (!Array.isArray(headerFilePaths)) {
+    throw new Error('headerFilePaths must be an array');
+  }
+
+  // Validate number of files
+  if (headerFilePaths.length > 4) {
+    throw new Error('Maximum 4 header files allowed');
+  }
+
+  // Validate file extensions
+  for (const filePath of headerFilePaths) {
+    if (!filePath.toLowerCase().endsWith('.hpp')) {
+    throw new Error(`${filePath} is not a .hpp file. Only C++ header files are allowed.`);
+    }
+  }
+
+  if (!requestFilePath.toLowerCase().endsWith('.cs')) {
+    throw new Error(`${requestFilePath} is not a .cs file. Only C# files are allowed for requests.`);
+  }
+
+  console.log(`Processing ${headerFilePaths.length} header files with request file ${requestFilePath}`);
+
+  // Read request file
+  const requestContent = await fs.readFile(requestFilePath, 'utf8');
+
+  // Extract struct names from request file
+  const structsToFind = extractStructNames(requestContent);
+  console.log(`Found ${structsToFind.length} struct(s) to search for: ${structsToFind.join(', ')}`);
+
+  // Initialize modified request file content
+  let processedRequestFile = requestContent;
+
+  // Process each header file
+  for (let i = 0; i < headerFilePaths.length; i++) {
+    const headerFilePath = headerFilePaths[i];
+    const headerFileName = path.basename(headerFilePath);
+
+    console.log(`Processing file ${i+1}: ${headerFileName}`);
+
+    // Read header file content
+    const headerContent = await fs.readFile(headerFilePath, 'utf8');
+
+    // Look for each struct in the header file
+    for (const structName of structsToFind) {
+    // Process the header content to find and extract struct definitions
+    const extractedStruct = extractStructDefinition(headerContent, structName);
+
+    if (extractedStruct) {
+      console.log(`Found struct ${structName} in ${headerFileName}`);
+
+      // Parse the struct fields and generate C# code
+      const csharpStruct = generateCSharpOffsetStruct(extractedStruct);
+
+      // Update the request file with the generated C# struct
+      processedRequestFile = updateCSharpRequestFile(processedRequestFile, structName, csharpStruct);
+
+      console.log(`Generated C# offset struct for ${structName}`);
+    }
+    }
+  }
+
+  // Write the updated request file to disk
+  const outputFilePath = path.join(
+    path.dirname(requestFilePath),
+    `processed_${path.basename(requestFilePath)}`
+  );
+
+  await fs.writeFile(outputFilePath, processedRequestFile, 'utf8');
+  console.log(`Results written to ${outputFilePath}`);
+
+  return outputFilePath;
+  }
+
+  // Extract struct/class names from C# request file
+  function extractStructNames(csharpContent) {
+  const structNames = [];
+  const lines = csharpContent.split('\n');
+
+  // Regular expression to match struct declarations
+  const structRegex = /\s*public\s+struct\s+(\w+)/;
+
+  for (const line of lines) {
+    const match = line.match(structRegex);
+    if (match && match[1]) {
+    structNames.push(match[1]);
+    }
+  }
+
+  return structNames;
+  }
+
+  // Extract struct definition from C++ header file
+  function extractStructDefinition(headerContent, structName) {
+  // Find the struct/class definition in the header file
+  // First try with exact name
+  let structRegex = new RegExp(`\\b(struct|class)\\s+${structName}\\b[^{]*{([\\s\\S]*?)};`, 'g');
+  let match = structRegex.exec(headerContent);
+
+  // If not found, try without the 'F' prefix if the name starts with F
+  if (!match && structName.startsWith('F')) {
+    const nameWithoutF = structName.substring(1);
+    structRegex = new RegExp(`\\b(struct|class)\\s+${nameWithoutF}\\b[^{]*{([\\s\\S]*?)};`, 'g');
+    match = structRegex.exec(headerContent);
+  }
+
+  // If still not found, try adding an 'F' prefix if the name doesn't start with F
+  if (!match && !structName.startsWith('F')) {
+    const nameWithF = 'F' + structName;
+    structRegex = new RegExp(`\\b(struct|class)\\s+${nameWithF}\\b[^{]*{([\\s\\S]*?)};`, 'g');
+    match = structRegex.exec(headerContent);
+  }
+
+  if (!match) {
+    return null;
+  }
+
+  // Look for offset line usually preceding the struct
+  const structStartPos = match.index;
+  const offsetLineRegex = /\/\/\s+0x([0-9A-F]+)\s+\(0x([0-9A-F]+)\s+-\s+0x([0-9A-F]+)\)/;
+
+  // Search backwards from the struct definition to find the offset line
+  const prevLines = headerContent.substring(Math.max(0, structStartPos - 200), structStartPos);
+  const offsetMatch = prevLines.match(offsetLineRegex);
+
+  // Extract the full struct including metadata
+  const fullStructContent = headerContent.substring(
+    Math.max(0, structStartPos - 200), 
+    structStartPos + match[0].length + 100
+  );
+
+  // Extract size information
+  let size = null;
+  if (offsetMatch) {
+    size = parseInt(offsetMatch[1], 16);
+  }
+
+  return {
+    name: match[0].match(/\b(struct|class)\s+(\w+)/)[2],
+    type: match[0].match(/\b(struct|class)\s+(\w+)/)[1],
+    body: match[2],
+    fullContent: fullStructContent,
+    size
+  };
+  }
+
+  // Parse the struct fields and generate C# code
+  function generateCSharpOffsetStruct(extractedStruct) {
+  const fields = [];
+  const lines = extractedStruct.body.split('\n');
+
+  // Match field declarations with offsets in comments
+  // Format is typically: type fieldName; // 0xXXXX(size) comment
+  let currentOffset = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Skip empty lines and non-field lines
+    if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) {
+    continue;
+    }
+
+    // Look for offset comments like // 0x0000(0x000C)
+    const offsetMatch = line.match(/\/\/\s+0x([0-9A-F]+)\(.*?\)/);
+    if (offsetMatch) {
+    currentOffset = offsetMatch[1].toLowerCase();
+    }
+
+    // Check for bitfield pattern (e.g. uint8 bNetTemporary : 1;)
+    const bitfieldRegex = /^\s*([\w:<>\s]+[\*&]?)\s+(\w+)\s*:\s*(\d+);(?:\s*\/\/\s*(.*)?)?/;
+    const bitfieldMatch = line.match(bitfieldRegex);
+
+    if (bitfieldMatch) {
+    // Extract bitfield information
+    const fieldType = bitfieldMatch[1].trim();
+    const fieldName = bitfieldMatch[2].trim();
+    const bitNumber = bitfieldMatch[3].trim();
+    let fieldComment = bitfieldMatch[4] ? bitfieldMatch[4].trim() : '';
+
+    // Extract offset from comment if present
+    let fieldOffset = currentOffset;
+    const offsetInComment = fieldComment.match(/0x([0-9A-F]+)/);
+    if (offsetInComment) {
+      fieldOffset = offsetInComment[0].toLowerCase();
+    }
+
+    // Create proper bitfield name using the format: bitfield_0xOFFSET_BITNUMBER
+    // This ensures variable names are valid in C# (not starting with numbers)
+    const properName = `bitfield_${fieldOffset}_${bitNumber}`;
+
+    // Add original field name and type to comment
+    fieldComment = `${fieldName} : ${bitNumber} (${fieldType}) ${fieldComment}`;
+
+    // Add field to list
+    if (fieldOffset) {
+      fields.push({
+      name: properName,
+      type: fieldType,
+      offset: fieldOffset,
+      comment: fieldComment
+      });
+    }
+    } else {
+    // Match individual field declarations (non-bitfield)
+    // This regex handles common C++ field patterns while avoiding method declarations
+    const fieldRegex = /^\s*([\w:<>\s]+[\*&]?)\s+(\w+);(?:\s*\/\/\s*(0x[0-9A-F]+)(?:\(.*?\))?\s*(.*))?/;
+    const fieldMatch = line.match(fieldRegex);
+
+    if (fieldMatch) {
+      // Extract field information
+      const fieldType = fieldMatch[1].trim();
+      const fieldName = fieldMatch[2].trim();
+      const fieldOffset = fieldMatch[3] ? fieldMatch[3].toLowerCase() : currentOffset;
+      let fieldComment = fieldMatch[4] ? fieldMatch[4].trim() : '';
+
+      // Skip pad fields
+      if (fieldName.startsWith('Pad_') || fieldName.startsWith('pad_')) {
+      continue;
+      }
+
+      // Add field type to comment if not already present
+      if (!fieldComment.includes(fieldType)) {
+      fieldComment = fieldType;
+      }
+
+      // Add field to list
+      if (fieldOffset) {
+      fields.push({
+        name: fieldName,
+        type: fieldType,
+        offset: fieldOffset,
+        comment: fieldComment
+      });
+      }
+    } else {
+      // Check for alternative field pattern with offset at end
+      // Example: float LocationOffsetMultiplier; // 0x0058(0x0004) (Edit, ...)
+      // Or: TArray<class UActorComponent*> InstanceComponents; // 0x01F8(0x0010) (ExportObject, ...)
+      const altFieldRegex = /^\s*([\w:<>\s\*&]+)\s+(\w+);(?:\s*\/\/\s*(.*))?/;
+      const altMatch = line.match(altFieldRegex);
+
+      if (altMatch) {
+      const fieldType = altMatch[1].trim();
+      const fieldName = altMatch[2].trim();
+      let fieldComment = altMatch[3] ? altMatch[3].trim() : '';
+
+      // Extract offset from the comment if present
+      let fieldOffset = null;
+      const offsetInComment = fieldComment.match(/0x([0-9A-F]+)/);
+      if (offsetInComment) {
+        fieldOffset = offsetInComment[0].toLowerCase();
+      } else if (currentOffset) {
+        // Use current offset if we can't find one in the comment
+        fieldOffset = currentOffset;
+      }
+
+      // Skip pad fields
+      if (fieldName.startsWith('Pad_') || fieldName.startsWith('pad_')) {
+        continue;
+      }
+
+      // Make field type part of the comment
+      fieldComment = `${fieldType} ${fieldComment}`;
+
+      // Add field to list if we have an offset
+      if (fieldOffset) {
+        fields.push({
+        name: fieldName,
+        type: fieldType,
+        offset: fieldOffset,
+        comment: fieldComment
+        });
+      }
+      }
+    }
+    }
+  }
+
+  // Generate C# struct fields
+  const csharpFields = fields.map(field => {
+    return `        public const uint ${field.name} = ${field.offset}; // ${field.comment}`;
+  }).join('\n');
+
+  return csharpFields;
+  }
+
+  // Update the C# request file with the generated struct
+  function updateCSharpRequestFile(csharpContent, structName, generatedFields) {
+  // Find the empty struct declaration
+  const structRegex = new RegExp(`(\\s*public\\s+struct\\s+${structName}\\s*{\\s*)(})`);
+
+  // If the struct exists, replace its content
+  if (csharpContent.match(structRegex)) {
+    return csharpContent.replace(structRegex, `$1\n${generatedFields}\n    $2`);
+  }
+
+  // If struct not found, look for one with F prefix or without F prefix
+  let altStructName = structName;
+  if (structName.startsWith('F')) {
+    altStructName = structName.substring(1);
+  } else {
+    altStructName = 'F' + structName;
+  }
+
+  const altStructRegex = new RegExp(`(\\s*public\\s+struct\\s+${altStructName}\\s*{\\s*)(})`);
+  if (csharpContent.match(altStructRegex)) {
+    return csharpContent.replace(altStructRegex, `$1\n${generatedFields}\n    $2`);
+  }
+
+  // If not found at all, return unchanged content
+  return csharpContent;
+  }
+}
