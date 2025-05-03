@@ -91,6 +91,65 @@ bool isAlphabetical(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
+// Function to convert TokenType enum to string
+std::string tkntype_str(TokenType type) {
+    switch (type) {
+        case UNKNOWN:                   return "UNKNOWN";
+        case WHITESPACE:                return "WHITESPACE";
+        case LITERAL_INTEGER:           return "LITERAL_INTEGER";
+        case LITERAL_FLOATING_POINT:    return "LITERAL_FLOATING_POINT";
+        case LITERAL_CHARACTER:         return "LITERAL_CHARACTER";
+        case LITERAL_STRING:            return "LITERAL_STRING";
+        case PAREN_LEFT:                return "PAREN_LEFT";
+        case PAREN_RIGHT:               return "PAREN_RIGHT";
+        case BRACKET_LEFT:              return "BRACKET_LEFT";
+        case BRACKET_RIGHT:             return "BRACKET_RIGHT";
+        case SQUARE_BRACKET_LEFT:       return "SQUARE_BRACKET_LEFT";
+        case SQUARE_BRACKET_RIGHT:      return "SQUARE_BRACKET_RIGHT";
+        case ANGLE_BRACKET_LEFT:        return "ANGLE_BRACKET_LEFT";
+        case ANGLE_BRACKET_RIGHT:       return "ANGLE_BRACKET_RIGHT";
+        case COMMA:                     return "COMMA";
+        case SEMICOLON:                 return "SEMICOLON";
+        case IDENTIFIER:                return "IDENTIFIER";
+        case OP_PTR:                    return "OP_PTR";
+        case KW_BREAK:                  return "KW_BREAK";
+        case KW_CASE:                   return "KW_CASE";
+        case KW_CAST:                   return "KW_CAST";
+        case KW_CONST:                  return "KW_CONST";
+        case KW_CONTINUE:               return "KW_CONTINUE";
+        case KW_DEFAULT:                return "KW_DEFAULT";
+        case KW_DELETE:                 return "KW_DELETE";
+        case KW_ELSE:                   return "KW_ELSE";
+        case KW_ENUM:                   return "KW_ENUM";
+        case KW_FALSE:                  return "KW_FALSE";
+        case KW_FOR:                    return "KW_FOR";
+        case KW_IF:                     return "KW_IF";
+        case KW_NEW:                    return "KW_NEW";
+        case KW_NULL:                   return "KW_NULL";
+        case KW_RETURN:                 return "KW_RETURN";
+        case KW_SIZEOF:                 return "KW_SIZEOF";
+        case KW_STRUCT:                 return "KW_STRUCT";
+        case KW_SWITCH:                 return "KW_SWITCH";
+        case KW_TRUE:                   return "KW_TRUE";
+        case KW_WHILE:                  return "KW_WHILE";
+        case BT_INT8:                   return "BT_INT8";
+        case BT_INT16:                  return "BT_INT16";
+        case BT_INT32:                  return "BT_INT32";
+        case BT_INT64:                  return "BT_INT64";
+        case BT_UINT8:                  return "BT_UINT8";
+        case BT_UINT16:                 return "BT_UINT16";
+        case BT_UINT32:                 return "BT_UINT32";
+        case BT_UINT64:                 return "BT_UINT64";
+        case BT_FLOAT:                  return "BT_FLOAT";
+        case BT_DOUBLE:                 return "BT_DOUBLE";
+        case BT_BOOL:                   return "BT_BOOL";
+        case BT_CHAR:                   return "BT_CHAR";
+        case BT_STRING:                 return "BT_STRING";
+        case BT_VOID:                   return "BT_VOID";
+        default:                        return "UNKNOWN"; // Should not happen if all enums are covered
+    }
+}
+
 
 #define MAX_REGISTERED_TERMS 1024
 
@@ -126,8 +185,15 @@ void register_terms(std::string s, Token* token_array){
                 std::cout << "not found\n";
             else{
                 //https://cplusplus.com/reference/string/basic_string/npos/  defined as -1
-                std::string term = token.substr(7,-1);
-                Token newToken = {TokenType::BT_STRING, token, i};
+                std::string term = token.substr(n+7,-1);
+                while(term.back() == '\n'){
+                    term.pop_back();
+                }
+                while(term.find(" ") != -1){
+                    auto pos = term.find(" ");
+                    term.erase(pos);
+                }
+                Token newToken = {TokenType::BT_STRING, term, j};
                 token_array[j] = newToken;
                 ++j; //index num
             } 
@@ -139,7 +205,7 @@ void register_terms(std::string s, Token* token_array){
             std::cout << "end of array\n";
             return;
         }
-        std::cout << token_array[i].lexeme << "\n";
+        std::cout << tkntype_str(token_array[i].type) << "  " << token_array[i].lexeme << "  " << token_array[i].line << "\n";
     }
 }
 
@@ -149,26 +215,40 @@ void displayUsage(const std::string& programName) {
     std::cout << "Usage: " << programName << " <input_file> <output_file>\n";
     std::cout << "  <input_file>  - Path to the C++ header file (e.g., example.hpp)\n";
     //std::cout << "  <class_name>  - Name of the class to parse (e.g., AActor)\n";
-    std::cout << "  <output_file> - Path to the output C# file (e.g., Offsets.cs)\n";
+    //std::cout << "  <output_file> - Path to the output C# file (e.g., Offsets.cs)\n";
 }
 
 int main(int argc, char* argv[]) {
-    std::string inputFilePath = argv[1];
-    try {
-        // Read the C++ file content
-        std::string buffered_OUT = readFile2String(inputFilePath);
-        if(!buffered_OUT.compare(std::string("error"))){
-            throw 2;
+    if(argc > 1){
+        std::string inputFilePath = argv[1];
+        try {
+            // Read the C++ file content
+            std::string buffered_OUT = readFile2String(inputFilePath);
+            if(!buffered_OUT.compare(std::string("error"))){
+                throw "no file path";
+            }
+            Token search_terms[MAX_REGISTERED_TERMS];
+            register_terms(buffered_OUT, search_terms);
+            return 0;
+            
         }
-        Token search_terms[MAX_REGISTERED_TERMS];
-        register_terms(buffered_OUT, search_terms);
-        return 0;
-        
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
-        return 1;
-    }
+        catch (const std::exception& e) {
+            // This catch block handles exceptions derived from std::exception
+            std::cerr << "Caught std::exception: " << e.what() << "\n";
+            return 3;
+        }
+        // Add a catch block for other types of exceptions, like C-style strings
+        catch (const char* msg) {
+            // This catch block handles C-style string literals thrown
+            std::cerr << "Caught C-style string exception: " << msg << "\n";
+            return 4;
+        }
+        catch (...) {
+            // This catch block handles any other type of exception
+            std::cerr << "Caught unknown exception\n";
+            return 5;
+        }
+    }else{displayUsage(argv[0]); return 1;}
 }
 
 
