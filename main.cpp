@@ -182,7 +182,7 @@ void register_terms(std::string s, Token* token_array){
         {
             auto n = token.rfind("struct "); //+ 7 positions to reach search term in token
             if (n != std::string::npos){
-                //https://cplusplus.com/reference/string/basic_string/npos/  defined as -1
+                //https://cplusplus.com/reference/string/basic_string/npos/
                 std::string term = token.substr(n+7,std::string::npos);
                 while(term.back() == '\n'){
                     term.pop_back();
@@ -227,8 +227,21 @@ int main(int argc, char* argv[]) {
             }
             Token search_terms[MAX_REGISTERED_TERMS];
             register_terms(buffered_OUT, search_terms);
-            return 0;
-            
+            //search 4 files hardcoded to a folder "SDK_Files"
+            //throw errors into std::cout console if required but don't close program
+            //write found fields into term structs in "Offsets.cs" input.
+                
+                //re-open file for writting and reading and binary mode.
+                //use generic getlines to nail down the definiton locations.
+                    
+                    //tokenize the lines of definition until end of definition found
+                        
+                        //parse tokens for fields
+
+                            //locate term defs in Offsets.cs file
+                            //write c# code output
+
+            return 0;  
         }
         catch (const std::exception& e) {
             // This catch block handles exceptions derived from std::exception
@@ -248,26 +261,3 @@ int main(int argc, char* argv[]) {
         }
     }else{displayUsage(argv[0]); return 1;}
 }
-
-
-
-    // if (argc > 1 && (std::string(argv[1]) == "help" || std::string(argv[1]) == "Help") || argc < 2) {
-	// 	displayUsage(argv[0]);
-	// 	return 0;
-    // }
-
-    // if (argc > 3) {
-	// 	std::cout << "Too many arguments provided.\n";
-	// 	displayUsage(argv[0]);
-    //     return 0;
-    // }
-
-    // // Parse command-line arguments
-    // std::string inputFilePath = argv[1];
-    // std::string className = "FSQSwayData";
-    // std::string outputFilePath = argv[2];
-
-    
-
-    // return 0;
-//}
