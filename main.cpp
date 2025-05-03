@@ -73,7 +73,6 @@ typedef struct {
     TokenType type;
     std::string lexeme;
     int line;
-    int col;
 } Token;
 
 bool isNewline(char c) {
@@ -96,7 +95,7 @@ bool isAlphabetical(char c) {
 #define MAX_REGISTERED_TERMS 1024
 
 // Function to read the content of a file
-std::string readOffsetFile(const std::string& filePath) {
+std::string readFile2String(const std::string& filePath) {
     FILE* f = fopen(filePath.c_str(), "rb");//binary mode prevents ascii code mode
     if(f){
          fseek(f, 0, SEEK_END);
@@ -111,8 +110,37 @@ std::string readOffsetFile(const std::string& filePath) {
     return std::string("error");
 }
 
-void register_terms(std::stringstream s, std::string* str_arr){
-    
+//read the wanted terms from the stream and save them in array
+//https://en.cppreference.com/w/cpp/io/basic_stringstream
+//https://en.cppreference.com/w/cpp/string/basic_string/rfind
+void register_terms(std::string s, Token* token_array){
+    std::string token;
+    int i = 0;//line num
+    int j = 0;//array index
+    std::stringstream stream(s);
+    while(std::getline(stream, token, '{')){
+        if(!token.empty() && j < MAX_REGISTERED_TERMS)
+        {
+            auto n = token.rfind("struct "); //+ 7 positions to reach search term in token
+            if (n == std::string::npos)
+                std::cout << "not found\n";
+            else{
+                //https://cplusplus.com/reference/string/basic_string/npos/  defined as -1
+                std::string term = token.substr(7,-1);
+                Token newToken = {TokenType::BT_STRING, token, i};
+                token_array[j] = newToken;
+                ++j; //index num
+            } 
+        }else{break;}
+        ++i;//line num  
+    }
+    for(int i = 0; i < MAX_REGISTERED_TERMS; ++i){
+        if(token_array[i].lexeme.empty()){
+            std::cout << "end of array\n";
+            return;
+        }
+        std::cout << token_array[i].lexeme << "\n";
+    }
 }
 
 
@@ -128,12 +156,12 @@ int main(int argc, char* argv[]) {
     std::string inputFilePath = argv[1];
     try {
         // Read the C++ file content
-        std::string buffered_OUT = readOffsetFile(inputFilePath);
+        std::string buffered_OUT = readFile2String(inputFilePath);
         if(!buffered_OUT.compare(std::string("error"))){
             throw 2;
         }
-        std::string search_terms[MAX_REGISTERED_TERMS];
-        register_terms(std::stringstream(buffered_OUT), search_terms);
+        Token search_terms[MAX_REGISTERED_TERMS];
+        register_terms(buffered_OUT, search_terms);
         return 0;
         
     }
