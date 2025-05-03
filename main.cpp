@@ -93,10 +93,11 @@ bool isAlphabetical(char c) {
 }
 
 
+#define MAX_REGISTERED_TERMS 1024
 
 // Function to read the content of a file
 std::string readOffsetFile(const std::string& filePath) {
-    FILE* f = fopen(filePath.c_str(), "r");
+    FILE* f = fopen(filePath.c_str(), "rb");//binary mode prevents ascii code mode
     if(f){
          fseek(f, 0, SEEK_END);
          auto len = ftell(f);
@@ -104,15 +105,14 @@ std::string readOffsetFile(const std::string& filePath) {
          std::string data;
          data.resize(static_cast<size_t>(len));
          fread(&data[0], sizeof(char), len, f);
+         fclose(f);
          return data;
     }
-    return std::string("nigger");
+    return std::string("error");
 }
 
-void test(std::stringstream s){
-    std::ofstream outFile("output.txt");
-    outFile << s.str();
-    outFile.close();
+void register_terms(std::stringstream s, std::string* str_arr){
+    
 }
 
 
@@ -129,11 +129,11 @@ int main(int argc, char* argv[]) {
     try {
         // Read the C++ file content
         std::string buffered_OUT = readOffsetFile(inputFilePath);
-        if(!buffered_OUT.compare(std::string("nigger"))){
+        if(!buffered_OUT.compare(std::string("error"))){
             throw 2;
         }
-
-        test(std::stringstream(buffered_OUT));
+        std::string search_terms[MAX_REGISTERED_TERMS];
+        register_terms(std::stringstream(buffered_OUT), search_terms);
         return 0;
         
     }
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
-
+}
 
 
 
@@ -164,4 +164,4 @@ int main(int argc, char* argv[]) {
     
 
     // return 0;
-}
+//}

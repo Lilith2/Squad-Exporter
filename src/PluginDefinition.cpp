@@ -25,14 +25,15 @@
 // File-based debug logging
 #define log_message(message) { \
     std::wofstream log("debug.log", std::ios::app); \
-    log << message << L"\n"; \
+    log << (message) << L"\n"; \
     log.close(); \
 }
+
 
 FuncItem funcItem[nbFunc];
 NppData nppData;
 
-// Helper function to convert std::string to std::wstring
+// Helper function to convert std::string to std::wstring  
 std::wstring stringToWstring(const std::string& str) {
     if (str.empty()) return std::wstring();
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
@@ -136,17 +137,41 @@ std::wstring getOpenHPPFile() {
 
 std::set<std::string> parseOffsetsStructs(const std::string& content) {
     std::set<std::string> structNames;
-    std::regex structPattern(R"(public\s+struct\s+(\w+)\s*[\n\r\s]*\{)");
+
+    // Improved regex to handle various formatting scenarios
+    std::regex structPattern(R"(public\s+struct\s+(\w+)(?:\s*\{|\s*[\n\r]+\s*\{))");
+
     auto begin = content.cbegin();
     auto end = content.cend();
     std::smatch matches;
 
     while (std::regex_search(begin, end, matches, structPattern)) {
-        structNames.insert(matches[1].str());
+        std::string structName = matches[1].str();
+        structNames.insert(structName);
+        log_message(L"Found struct in Offsets.cs: " + stringToWstring(structName));
         begin = matches.suffix().first;
     }
 
-    log_message(L"Parsed structs from Offsets.cs: " + stringToWstring(std::to_string(structNames.size())) + L" found");
+    // If we didn't find any structs with the first pattern, try a more lenient one
+    if (structNames.empty()) {
+        begin = content.cbegin();
+        std::regex altPattern(R"(struct\s+(\w+))");
+
+        while (std::regex_search(begin, end, matches, altPattern)) {
+            std::string structName = matches[1].str();
+            structNames.insert(structName);
+            log_message(L"Found struct with alternative pattern: " + stringToWstring(structName));
+            begin = matches.suffix().first;
+        }
+    }
+
+    log_message(L"Parsed structs from Offsets.cs: " + std::to_wstring(structNames.size()) + L" found");
+    
+    // Debug logging of all found structs
+    for (const auto& name : structNames) {
+        log_message(L"  - " + stringToWstring(name));
+    }
+
     return structNames;
 }
 
@@ -155,14 +180,15 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
     enum class ParseState { SEARCHING, PARSING };
     ParseState state = ParseState::SEARCHING;
 
-    // Regex patterns
+    // Regex patterns - improved to be more specific
     const std::regex structStartRegex(R"(\b(?:struct|class)\s+" + structName + R"\s*(?::\s*public\s+\w+)?\s*\{)");
     const std::regex fieldRegex(R"(\s*([\w\s:<>\*]+(?:<\s*[\w\s\*,<>]+\s*>)?)\s+(\w+)\s*;\s*//\s*0x([0-9a-fA-F]+)(?:\s*\(([^)]*)\))?\s*)");
     const std::regex bitfieldRegex(R"(\s*(uint\d+|bool)\s+(\w+)\s*:\s*\d+\s*;\s*//\s*0x([0-9a-fA-F]+)(?:\s*\(([^)]*)\))?\s*)");
-    const std::regex methodRegex(R"(\s*(?:[\w:<>\*]+\s*(?:<\s*[\w\s\*,<>]+\s*>)?\s+)?\w+\s*\([^)]*\)\s*(?:const)?\s*;)");
+    const std::regex methodRegex(R"(\s*(?:virtual\s+)?(?:[\w:<>\*]+\s*(?:<\s*[\w\s\*,<>]+\s*>)?\s+)?\w+\s*\([^{;]*\)\s*(?:const)?\s*(?:override)?\s*;)");
     const std::regex accessSpecifierRegex(R"(\s*(public|private|protected):\s*)");
     const std::regex paddingRegex(R"(\s*uint8\s+(Pad_\w+|BitPad_\w+)\s*(?:\[\d+\]|\s*:\s*\d+);\s*//\s*0x[0-9a-fA-F]+)");
     const std::regex endStructRegex(R"(^\s*\};)");
+    const std::regex methodStartRegex(R"(\s*(?:[\w:<>\*]+\s*(?:<\s*[\w\s\*,<>]+\s*>)?\s+)?\w+\s*\()");  // Detect start of method definitions
 
     if (content.empty()) {
         log_message(L"Error: Empty content for struct " + stringToWstring(structName) + L" in " + filePath);
@@ -171,114 +197,108 @@ bool parseHPPForStruct(const std::string& content, const std::string& structName
 
     log_message(L"Starting parseHPPForStruct for " + stringToWstring(structName) + L" in " + filePath);
 
-    std::stringstream ss(content);
+    // Initial search for the struct/class
+    std::size_t start_pos = content.find(structName);
+    if (start_pos == std::string::npos) {
+        log_message(L"Could not find struct/class " + stringToWstring(structName) + L" in " + filePath);
+        return false;
+    }
+
+    // Find the opening brace for the class/struct
+    std::size_t struct_start = content.find("{", start_pos);
+    if (struct_start == std::string::npos) {
+        log_message(L"Could not find opening brace for " + stringToWstring(structName) + L" in " + filePath);
+        return false;
+    }
+
+    // Find where fields end and methods begin
+    std::size_t method_section_start = content.find("public:", struct_start + 1);
+    if (method_section_start == std::string::npos) {
+        // If no public: section found, try to find the closing brace
+        method_section_start = content.find("};", struct_start + 1);
+        if (method_section_start == std::string::npos) {
+            log_message(L"Could not find end of struct " + stringToWstring(structName) + L" in " + filePath);
+            return false;
+        }
+    }
+
+    // Extract the fields section
+    std::string fields_section = content.substr(struct_start + 1, method_section_start - struct_start - 1);
+    log_message(L"Found fields section for " + stringToWstring(structName) + L" in " + filePath);
+
+    // Process the fields section line by line
+    std::stringstream ss(fields_section);
     std::string line;
     int lineNumber = 0;
+    bool inPublicSection = false;
 
     while (std::getline(ss, line)) {
         lineNumber++;
         std::smatch match;
 
         if (line.empty() || std::all_of(line.begin(), line.end(), isspace)) {
-            log_message(L"Line " + std::to_wstring(lineNumber) + L" in " + filePath + L": [Empty]");
             continue;
         }
 
-        log_message(L"Line " + std::to_wstring(lineNumber) + L" in " + filePath + L": " + stringToWstring(line));
-
-        switch (state) {
-        case ParseState::SEARCHING:
-            if (std::regex_search(line, match, structStartRegex)) {
-                state = ParseState::PARSING;
-                log_message(L"Found struct " + stringToWstring(structName) + L" at line " + std::to_wstring(lineNumber) + L" in " + filePath);
+        // Check for access specifiers
+        if (std::regex_search(line, match, accessSpecifierRegex)) {
+            if (match[1].str() == "public:") {
+                inPublicSection = true;
             }
             else {
-                log_message(L"Searching for struct " + stringToWstring(structName) + L" at line " + std::to_wstring(lineNumber) + L" in " + filePath);
+                inPublicSection = false;
             }
-            break;
+            continue;
+        }
 
-        case ParseState::PARSING:
-            if (std::regex_search(line, match, fieldRegex) && !std::regex_search(line, match, paddingRegex)) {
-                std::string type = match[1].str();
-                std::string name = match[2].str();
-                std::string offset = match[3].str();
-                std::string comment = match[4].matched ? match[4].str() : "";
-                fields.emplace_back(type, name, offset, comment);
-                log_message(L"Matched field: " + stringToWstring(name) + L" at 0x" + stringToWstring(offset) + L", Type: " + stringToWstring(type) + L" in " + filePath);
-            }
-            else if (std::regex_search(line, match, bitfieldRegex)) {
-                std::string type = match[1].str();
-                std::string name = match[2].str();
-                std::string offset = match[3].str();
-                std::string comment = match[4].matched ? match[4].str() : "";
-                fields.emplace_back(type, name, offset, comment);
-                log_message(L"Matched bitfield: " + stringToWstring(name) + L" at 0x" + stringToWstring(offset) + L", Type: " + stringToWstring(type) + L" in " + filePath);
-            }
-            else if (std::regex_search(line, match, methodRegex) || std::regex_search(line, match, accessSpecifierRegex)) {
-                log_message(L"Stopping field parsing at line " + std::to_wstring(lineNumber) + L" (method or access specifier) in " + filePath);
-                if (!fields.empty()) {
-                    std::stringstream ss;
-                    ss << "    public struct " << structName << "\n    {\n";
-                    for (const auto& [type, name, offset, comment] : fields) {
-                        ss << "        public const uint " << name << " = 0x" << offset << "; // " << type;
-                        if (!comment.empty()) {
-                            ss << " (" << comment << ")";
-                        }
-                        ss << "\n";
-                    }
-                    ss << "    }\n\n";
-                    structOutput = ss.str();
-                    log_message(L"Generated output for " + stringToWstring(structName) + L" in " + filePath + L":\n" + stringToWstring(structOutput));
-                    return true;
-                }
-                log_message(L"No fields found before methods or access specifier in " + filePath);
-                return false;
-            }
-            else if (std::regex_search(line, match, endStructRegex)) {
-                log_message(L"End of struct at line " + std::to_wstring(lineNumber) + L" in " + filePath);
-                if (!fields.empty()) {
-                    std::stringstream ss;
-                    ss << "    public struct " << structName << "\n    {\n";
-                    for (const auto& [type, name, offset, comment] : fields) {
-                        ss << "        public const uint " << name << " = 0x" << offset << "; // " << type;
-                        if (!comment.empty()) {
-                            ss << " (" << comment << ")";
-                        }
-                        ss << "\n";
-                    }
-                    ss << "    }\n\n";
-                    structOutput = ss.str();
-                    log_message(L"Generated output for " + stringToWstring(structName) + L" in " + filePath + L":\n" + stringToWstring(structOutput));
-                    return true;
-                }
-                log_message(L"No fields found before end of struct in " + filePath);
-                return false;
-            }
-            else {
-                log_message(L"Unmatched line for " + stringToWstring(structName) + L" at line " + std::to_wstring(lineNumber) + L" in " + filePath);
-            }
-            break;
+        // Skip if not in public section or if this is a method
+        if (!inPublicSection || std::regex_search(line, methodStartRegex)) {
+            continue;
+        }
+
+        // Process fields
+        if (std::regex_search(line, match, fieldRegex) && !std::regex_search(line, match, paddingRegex)) {
+            std::string type = match[1].str();
+            std::string name = match[2].str();
+            std::string offset = match[3].str();
+            std::string comment = match[4].matched ? match[4].str() : "";
+
+            // Trim whitespace
+            type.erase(0, type.find_first_not_of(" \t"));
+            type.erase(type.find_last_not_of(" \t") + 1);
+
+            fields.emplace_back(type, name, offset, comment);
+            log_message(L"Matched field: " + stringToWstring(name) + L" at 0x" + stringToWstring(offset) + L", Type: " + stringToWstring(type));
+        }
+        else if (std::regex_search(line, match, bitfieldRegex)) {
+            std::string type = match[1].str();
+            std::string name = match[2].str();
+            std::string offset = match[3].str();
+            std::string comment = match[4].matched ? match[4].str() : "";
+
+            fields.emplace_back(type, name, offset, comment);
+            log_message(L"Matched bitfield: " + stringToWstring(name) + L" at 0x" + stringToWstring(offset) + L", Type: " + stringToWstring(type));
         }
     }
 
-    log_message(L"Reached end of file for " + stringToWstring(structName) + L" in " + filePath);
-    if (state == ParseState::PARSING && !fields.empty()) {
-        std::stringstream ss;
-        ss << "    public struct " << structName << "\n    {\n";
+    // Generate the output
+    if (!fields.empty()) {
+        std::stringstream output;
+        output << "    public struct " << structName << "\n    {\n";
         for (const auto& [type, name, offset, comment] : fields) {
-            ss << "        public const uint " << name << " = 0x" << offset << "; // " << type;
+            output << "        public const uint " << name << " = 0x" << offset << "; // " << type;
             if (!comment.empty()) {
-                ss << " (" << comment << ")";
+                output << " (" << comment << ")";
             }
-            ss << "\n";
+            output << "\n";
         }
-        ss << "    }\n\n";
-        structOutput = ss.str();
-        log_message(L"Generated output for " + stringToWstring(structName) + L" in " + filePath + L":\n" + stringToWstring(structOutput));
+        output << "    }\n\n";
+        structOutput = output.str();
+        log_message(L"Generated output for " + stringToWstring(structName) + L" with " + std::to_wstring(fields.size()) + L" fields");
         return true;
     }
 
-    log_message(L"Failed to find struct " + stringToWstring(structName) + L" or parse fields in " + filePath);
+    log_message(L"No fields found for " + stringToWstring(structName) + L" in " + filePath);
     return false;
 }
 
@@ -335,21 +355,98 @@ void populateOffsetsFromHPP() {
             return;
         }
 
+        // Check all possible Engine/Game files
+        std::vector<std::wstring> possibleHppFiles;
+        std::vector<std::string> possibleHppContents;
+
+        possibleHppFiles.push_back(hppFilePath);
+        possibleHppContents.push_back(hppContent);
+
+        // Check other potential HPP files
+        std::vector<std::wstring> additionalFiles = {
+            L"Engine_structs.hpp",
+            L"Game_classes.hpp",
+            L"Game_structs.hpp"
+        };
+
+        for (const auto& filename : additionalFiles) {
+            // Check if file is open in Notepad++
+            int nbOpenFiles = ::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+            std::vector<TCHAR*> filePaths(nbOpenFiles);
+            for (int i = 0; i < nbOpenFiles; ++i) {
+                filePaths[i] = new TCHAR[MAX_PATH];
+            }
+
+            BOOL result = ::SendMessage(nppData._nppHandle, NPPM_GETOPENFILENAMES, (WPARAM)filePaths.data(), nbOpenFiles);
+            if (result) {
+                for (int i = 0; i < nbOpenFiles; ++i) {
+                    std::wstring path(filePaths[i]);
+                    std::wstring::size_type lastSep = path.find_last_of(L"\\/");
+                    std::wstring fileName = (lastSep != std::wstring::npos) ? path.substr(lastSep + 1) : path;
+
+                    if (_wcsicmp(fileName.c_str(), filename.c_str()) == 0) {
+                        std::string content = getFileContent(path);
+                        if (!content.empty()) {
+                            possibleHppFiles.push_back(path);
+                            possibleHppContents.push_back(content);
+                            log_message(L"Found additional file: " + path);
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < nbOpenFiles; ++i) {
+                delete[] filePaths[i];
+            }
+        }
+
         // Generate new Offsets.cs content
         std::stringstream newOffsetsContent;
         newOffsetsContent << "namespace Offsets\n{\n";
         std::set<std::string> processedStructs;
 
+        // Preserve existing structs and replace with updated content
+        std::map<std::string, std::string> existingStructs;
+        std::regex structRegex(R"(public\s+struct\s+(\w+)\s*\{[^}]*\})");
+        auto begin = offsetsContent.cbegin();
+        auto end = offsetsContent.cend();
+        std::smatch matches;
+
+        while (std::regex_search(begin, end, matches, structRegex)) {
+            std::string structName = matches[1].str();
+            std::string structContent = matches[0].str();
+            existingStructs[structName] = structContent;
+            begin = matches.suffix().first;
+        }
+
         for (const auto& structName : structNames) {
-            std::string structOutput;
-            if (parseHPPForStruct(hppContent, structName, structOutput, hppFilePath)) {
-                newOffsetsContent << structOutput;
-                processedStructs.insert(structName);
+            bool found = false;
+
+            // Try to find the struct in any of the possible hpp files
+            for (size_t i = 0; i < possibleHppFiles.size(); i++) {
+                std::string structOutput;
+                if (parseHPPForStruct(possibleHppContents[i], structName, structOutput, possibleHppFiles[i])) {
+                    newOffsetsContent << structOutput;
+                    processedStructs.insert(structName);
+                    found = true;
+                    log_message(L"Found struct " + stringToWstring(structName) + L" in " + possibleHppFiles[i]);
+                    break;
+                }
             }
-            else {
-                newOffsetsContent << "    public struct " << structName << "\n    {\n    }\n\n";
-                processedStructs.insert(structName);
-                log_message(L"Warning: No fields found for struct " + stringToWstring(structName));
+
+            if (!found) {
+                // If we couldn't find the struct, preserve the existing one
+                if (existingStructs.find(structName) != existingStructs.end()) {
+                    newOffsetsContent << "    " << existingStructs[structName] << "\n\n";
+                    processedStructs.insert(structName);
+                    log_message(L"Preserved existing struct " + stringToWstring(structName));
+                }
+                else {
+                    // If it didn't exist before, add an empty struct
+                    newOffsetsContent << "    public struct " << structName << "\n    {\n    }\n\n";
+                    processedStructs.insert(structName);
+                    log_message(L"Warning: No fields found for struct " + stringToWstring(structName));
+                }
             }
         }
 
@@ -368,7 +465,10 @@ void populateOffsetsFromHPP() {
         ::SendMessage(nppData._nppHandle, NPPM_SWITCHTOFILE, 0, (LPARAM)currentFilePath.c_str());
         ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)currentFilePath.c_str());
         ::SendMessage(nppData._nppHandle, NPPM_SETCURRENTLANGTYPE, 0, L_CS);
-        log_message(L"Success: Populated " + stringToWstring(std::to_string(processedStructs.size())) + L" structs in Offsets.cs");
+        log_message(L"Success: Populated " + stringToWstring(std::to_wstring(processedStructs.size())) + L" structs in Offsets.cs");
+    }
+    catch (const std::exception& e) {
+        log_message(L"Error: Exception in populateOffsetsFromHPP: " + stringToWstring(e.what()));
     }
     catch (...) {
         log_message(L"Error: Unexpected exception in populateOffsetsFromHPP");
