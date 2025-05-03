@@ -181,19 +181,17 @@ void register_terms(std::string s, Token* token_array){
         if(!token.empty() && j < MAX_REGISTERED_TERMS)
         {
             auto n = token.rfind("struct "); //+ 7 positions to reach search term in token
-            if (n == std::string::npos)
-                std::cout << "not found\n";
-            else{
+            if (n != std::string::npos){
                 //https://cplusplus.com/reference/string/basic_string/npos/  defined as -1
-                std::string term = token.substr(n+7,-1);
+                std::string term = token.substr(n+7,std::string::npos);
                 while(term.back() == '\n'){
                     term.pop_back();
                 }
-                while(term.find(" ") != -1){
+                while(term.find(" ") != std::string::npos){
                     auto pos = term.find(" ");
                     term.erase(pos);
                 }
-                Token newToken = {TokenType::BT_STRING, term, j};
+                Token newToken = {TokenType::BT_STRING, term, -1};
                 token_array[j] = newToken;
                 ++j; //index num
             } 
@@ -205,7 +203,7 @@ void register_terms(std::string s, Token* token_array){
             std::cout << "end of array\n";
             return;
         }
-        std::cout << tkntype_str(token_array[i].type) << "  " << token_array[i].lexeme << "  " << token_array[i].line << "\n";
+        std::cout << tkntype_str(token_array[i].type) << "  " << token_array[i].lexeme;
     }
 }
 
