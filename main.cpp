@@ -1,20 +1,118 @@
 #include <iostream>
 #include <fstream>
+#include <cstdio>
 #include <string>
+#include <sstream>
+
+enum TokenType {
+    UNKNOWN                     ,
+    WHITESPACE                  ,
+
+    LITERAL_INTEGER             ,   // 1
+    LITERAL_FLOATING_POINT      ,   // 1.0
+    LITERAL_CHARACTER           ,   // 'j'
+    LITERAL_STRING              ,   // "hello"
+
+    PAREN_LEFT                  ,   // (
+    PAREN_RIGHT                 ,   // )
+    BRACKET_LEFT                ,   // {
+    BRACKET_RIGHT               ,   // }
+    SQUARE_BRACKET_LEFT         ,   // [
+    SQUARE_BRACKET_RIGHT        ,   // ]
+    ANGLE_BRACKET_LEFT          ,   // <
+    ANGLE_BRACKET_RIGHT         ,   // >
+
+    COMMA                       ,   // ,
+    SEMICOLON                   ,   // ;
+    IDENTIFIER                  ,   // var/const/func/type name
+
+    OP_PTR                      ,   // *
+
+    KW_BREAK                    ,
+    KW_CASE                     ,
+    KW_CAST                     ,
+    KW_CONST                    ,
+    KW_CONTINUE                 ,
+    KW_DEFAULT                  ,
+    KW_DELETE                   ,
+    KW_ELSE                     ,
+    KW_ENUM                     ,   // var
+    KW_FALSE                    ,
+    KW_FOR                      ,
+    KW_IF                       ,
+    KW_NEW                      ,
+    KW_NULL                     ,
+    KW_RETURN                   ,
+    KW_SIZEOF                   ,
+    KW_STRUCT                   ,   // var
+    KW_SWITCH                   ,
+    KW_TRUE                     ,
+    KW_WHILE                    ,
+
+    // Builtin types
+    BT_INT8                     ,   // i8,  byte
+    BT_INT16                    ,   // i16, short
+    BT_INT32                    ,   // i32, int
+    BT_INT64                    ,   // i64, long
+
+    BT_UINT8                    ,   // u8
+    BT_UINT16                   ,   // u16
+    BT_UINT32                   ,   // u32
+    BT_UINT64                   ,   // u64
+
+    BT_FLOAT                    ,   // float
+    BT_DOUBLE                   ,   // double
+
+    BT_BOOL                     ,   // bool
+    BT_CHAR                     ,   // char
+    BT_STRING                   ,   // string
+    BT_VOID                        // void
+};
+
+typedef struct {
+    TokenType type;
+    std::string lexeme;
+    int line;
+    int col;
+} Token;
+
+bool isNewline(char c) {
+    return c == '\n' || c =='\r';
+}
+
+bool isWhitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+bool isNumeric(char c) {
+    return c >= '0' && c <= '9';
+}
+
+bool isAlphabetical(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+
 
 // Function to read the content of a file
-char* readOffsetFile(const std::string& filePath) {
-    std::ifstream file(filePath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + filePath);
+std::string readOffsetFile(const std::string& filePath) {
+    FILE* f = fopen(filePath.c_str(), "r");
+    if(f){
+         fseek(f, 0, SEEK_END);
+         auto len = ftell(f);
+         rewind(f);
+         std::string data;
+         data.resize(static_cast<size_t>(len));
+         fread(&data[0], sizeof(char), len, f);
+         return data;
     }
-    char* buffer[];
-    buffer << file.rdbuf();
+    return std::string("nigger");
+}
 
-    // Debug: Log the content of the file
-    std::cout << "File content:\n" << buffer.str() << "\n";
-
-    return buffer.str()
+void test(std::stringstream s){
+    std::ofstream outFile("output.txt");
+    outFile << s.str();
+    outFile.close();
 }
 
 
@@ -27,48 +125,43 @@ void displayUsage(const std::string& programName) {
 }
 
 int main(int argc, char* argv[]) {
-
-    if (argc > 1 && (std::string(argv[1]) == "help" || std::string(argv[1]) == "Help") || argc < 2) {
-		displayUsage(argv[0]);
-		return 0;
-    }
-
-    if (argc > 3) {
-		std::cout << "Too many arguments provided.\n";
-		displayUsage(argv[0]);
-        return 0;
-    }
-
-    // Parse command-line arguments
     std::string inputFilePath = argv[1];
-    std::string className = "FSQSwayData";
-    std::string outputFilePath = argv[2];
-
     try {
         // Read the C++ file content
-        char* buffered_OUT = readOffsetFile(inputFilePath);
-
-        // Parse the class and generate the C# output
-        std::string csharpOutput;
-        if (parseCppClass(cppContent, className, csharpOutput)) {
-            // Write the output to the specified file
-            std::ofstream outFile(outputFilePath);
-            if (!outFile.is_open()) {
-                throw std::runtime_error("Failed to open output file: " + outputFilePath);
-            }
-            outFile << "namespace Offsets\n{\n" << csharpOutput << "}\n";
-            outFile.close();
-
-            std::cout << "Successfully generated C# struct for " << className << " in " << outputFilePath << "\n";
+        std::string buffered_OUT = readOffsetFile(inputFilePath);
+        if(!buffered_OUT.compare(std::string("nigger"))){
+            throw 2;
         }
-        else {
-            std::cerr << "Class " << className << " not found in the C++ file.\n";
-        }
+
+        test(std::stringstream(buffered_OUT));
+        return 0;
+        
     }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
 
-    return 0;
+
+
+
+    // if (argc > 1 && (std::string(argv[1]) == "help" || std::string(argv[1]) == "Help") || argc < 2) {
+	// 	displayUsage(argv[0]);
+	// 	return 0;
+    // }
+
+    // if (argc > 3) {
+	// 	std::cout << "Too many arguments provided.\n";
+	// 	displayUsage(argv[0]);
+    //     return 0;
+    // }
+
+    // // Parse command-line arguments
+    // std::string inputFilePath = argv[1];
+    // std::string className = "FSQSwayData";
+    // std::string outputFilePath = argv[2];
+
+    
+
+    // return 0;
 }
