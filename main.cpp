@@ -71,9 +71,21 @@ enum TokenType {
 
 typedef struct {
     TokenType type;
-    std::string lexeme;
-    int line;
+    std::string term;
+    std::string* fields; //set array size with calloc later
+    int field_count;// array size
+    bool lexed = false;
+
+    ~Token() {
+        if (fields) {
+            for (int i = 0; i < field_count; ++i) {
+                fields[i].~std::string();
+            }
+            free(fields);
+        }
+    }
 } Token;
+
 
 bool isNewline(char c) {
     return c == '\n' || c =='\r';
@@ -152,6 +164,7 @@ std::string tkntype_str(TokenType type) {
 
 
 #define MAX_REGISTERED_TERMS 1024
+#define MAX_FIELDS 8192
 
 // Function to read the content of a file
 std::string readFile2String(const std::string& filePath) {
@@ -172,11 +185,36 @@ std::string readFile2String(const std::string& filePath) {
 //read the wanted terms from the stream and save them in array
 //https://en.cppreference.com/w/cpp/io/basic_stringstream
 //https://en.cppreference.com/w/cpp/string/basic_string/rfind
-void register_terms(std::string s, Token* token_array){
+void register_terms(std::string s, Token* token_array, bool searching, Token* fields){
     std::string token;
-    int i = 0;//line num
+    int i = 0;//counter num
     int j = 0;//array index
     std::stringstream stream(s);
+    if(searching){
+        while(std::getline(stream, token)){
+            auto class_pos = token.find("class ");
+            if(class_pos != std::string::npos){
+                auto inheritence_pos = token.find(" : public ", class_pos);
+                if(inheritence_pos != std::string::npos){
+                    auto testTerm = token.substr(class_pos + 6, public_pos - (class_pos + 6));
+                    while(i < MAX_FIELDS && !token_array[i].lexed){
+                        if(!testTerm.compare(token_array[i].term)){
+                            //rerun the same fields through this function per file but only append to uninitialzed indices
+                            token_array[i].lexed = true;
+                            while(std::getline(stream, token)){
+
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            ++j;
+        }
+
+
+        return;
+    }
     while(std::getline(stream, token, '{')){
         if(!token.empty() && j < MAX_REGISTERED_TERMS)
         {
@@ -191,21 +229,23 @@ void register_terms(std::string s, Token* token_array){
                     auto pos = term.find(" ");
                     term.erase(pos);
                 }
-                Token newToken = {TokenType::BT_STRING, term, -1};
+                Token newToken = {TokenType::BT_STRING, "lexme", term, 0};
                 token_array[j] = newToken;
                 ++j; //index num
             } 
         }else{break;}
-        ++i;//line num  
+        ++i;//iteration num  
     }
-    for(int i = 0; i < MAX_REGISTERED_TERMS; ++i){
-        if(token_array[i].lexeme.empty()){
+    for(int k = 0; k < MAX_REGISTERED_TERMS; ++k){
+        if(token_array[k].lexeme.empty()){
             std::cout << "end of array\n";
             return;
         }
-        std::cout << tkntype_str(token_array[i].type) << "  " << token_array[i].lexeme;
+        std::cout << tkntype_str(token_array[k].type) << "  " << token_array[k].term;
     }
 }
+
+
 
 
 // Function to display usage instructions
@@ -218,16 +258,22 @@ void displayUsage(const std::string& programName) {
 
 int main(int argc, char* argv[]) {
     if(argc > 1){
-        std::string inputFilePath = argv[1];
         try {
+            std::string inputFilePath = argv[1];
             // Read the C++ file content
             std::string buffered_OUT = readFile2String(inputFilePath);
             if(!buffered_OUT.compare(std::string("error"))){
                 throw "no file path";
             }
             Token search_terms[MAX_REGISTERED_TERMS];
-            register_terms(buffered_OUT, search_terms);
+            Token fields[MAX_FIELDS];
+            register_terms(buffered_OUT, search_terms, 0, fields);
             //search 4 files hardcoded to a folder "SDK_Files"
+            const std::string search_files[4]{"Engine_classes.hpp", "Engine_structs.hpp", "Squad_classes.hpp", "Squad_structs.hpp"};
+            for(auto path : search_files){
+                auto result = readFile2String("TestFiles/" + path);
+                register_terms(result, search_terms, 1, fields);
+            }
             //throw errors into std::cout console if required but don't close program
             //write found fields into term structs in "Offsets.cs" input.
                 
