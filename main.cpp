@@ -202,7 +202,7 @@ void register_terms(std::string s, Token* token_array, bool searching, Token* fi
                             //rerun the same fields through this function per file but only append to uninitialzed indices
                             token_array[i].lexed = true;
                             while(std::getline(stream, token)){
-
+                                
                             }
                             break;
                         }
