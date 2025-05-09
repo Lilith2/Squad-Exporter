@@ -26,6 +26,6 @@ Token uses std::string[] for the fields of each definition. TokenType is not ful
 ### Handles the output of C# struct fields determined by tokens created by Lexer.
 - The word term is used to describe the struct or class requested by input file.
 - boolean lexed is used to avoid overriding in use tokens when doing passes on new files. All tokens are stored in a single array.
-- Token is analyized for the offset value in the comment, the type of either built-in or custom, and the variable name
+- Token is analyzed for the offset value in the comment, the type of either built-in or custom, and the variable name
 - Data is arranged in order and saved to a new array of tokens ready for output
 - Output tokens are parsed further to ensure the term is correctly correlated with the fields in the C# output
